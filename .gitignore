@@ -1,0 +1,13 @@
+/self/
+/state/
+/build/
+__pycache__/
+*.py[cod]
+.DS_Store
+.env
+.env.*
+/remote/supabase/.temp/
+/remote/supabase/.branches/
+node_modules/
+.wrangler/
+.dev.vars*

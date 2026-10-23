@@ -1,0 +1,9 @@
+name = "metaharness"
+main = "index.ts"
+compatibility_date = "2026-10-23"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "metaharness"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"

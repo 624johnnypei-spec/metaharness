@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.metaharness.tick</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{PYTHON}}</string>
+		<string>{{REPO}}/mh</string>
+		<string>tick</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>{{REPO}}</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>{{HOME}}</string>
+		<key>MH_HOME</key>
+		<string>{{ROOT}}</string>
+		<key>PATH</key>
+		<string>{{PATH}}</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>{{STATE}}/tick.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>{{STATE}}/tick.err.log</string>
+	<key>StartInterval</key>
+	<integer>1800</integer>
+	<key>RunAtLoad</key>
+	<true/>
+</dict>
+</plist>

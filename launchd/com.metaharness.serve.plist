@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.metaharness.serve</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{PYTHON}}</string>
+		<string>{{REPO}}/mh</string>
+		<string>serve</string>
+		<string>--host</string>
+		<string>{{HOST}}</string>
+		<string>--port</string>
+		<string>8766</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>{{REPO}}</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>{{HOME}}</string>
+		<key>MH_HOME</key>
+		<string>{{ROOT}}</string>
+		<key>PATH</key>
+		<string>{{PATH}}</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>{{STATE}}/serve.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>{{STATE}}/serve.err.log</string>
+	<key>KeepAlive</key>
+	<true/>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+</dict>
+</plist>

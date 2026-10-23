@@ -1,0 +1,4 @@
+project_id = "metaharness"
+
+[functions.metaharness]
+verify_jwt = false
