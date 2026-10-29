@@ -9,6 +9,7 @@ import re
 import shutil
 from pathlib import Path
 
+from .security import read_store_file, scrub_secrets, private_dir
 from .core import HOME, SELF, add_note, file_mtime_iso, load_state, log, note_id, save_state, update_journal
 
 FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n?", re.S)
@@ -39,21 +40,31 @@ class Harvester:
     def __init__(self) -> None:
         self.cursor = load_state("harvest")
         self.added = 0
+        self.contents: dict[Path, str] = {}
 
     def changed(self, p: Path) -> bool:
-        key, mtime = str(p), p.stat().st_mtime
+        try:
+            text, mtime = read_store_file(p, HOME)
+        except (OSError, ValueError):
+            log("harvest skipped unsafe or oversized store file")
+            return False
+        self.contents[p] = scrub_secrets(text)
+        key = str(p)
         if self.cursor.get(key) == mtime:
             return False
         self.cursor[key] = mtime
         return True
 
     def add(self, text: str, **kw) -> None:
-        if add_note(text, **kw):
-            self.added += 1
+        try:
+            if add_note(text, **kw):
+                self.added += 1
+        except ValueError:
+            log("harvest skipped a note with invalid or oversized fields")
 
     def retire_missing(self, origin_prefix: str, current: list[str]) -> None:
         """Entry-list stores (codex summary, GEMINI.md, Hermes) rewrite themselves; drop entries they dropped."""
-        keep = {note_id(t) for t in current}
+        keep = {note_id(scrub_secrets(t)) for t in current}
 
         def f(n: dict) -> bool:
             if (n.get("origin") or "").startswith(origin_prefix) and n["id"] not in keep and not n.get("retired"):
@@ -79,10 +90,10 @@ class Harvester:
         for f in sorted((HOME / ".claude" / "projects").glob("*/memory/*.md")):
             if f.name == "MEMORY.md" or not self.changed(f):
                 continue
-            meta, body = _frontmatter(f.read_text(errors="ignore"))
+            meta, body = _frontmatter(self.contents[f])
             mtype = meta.get("type") or meta.get("metadata.type") or ""
             if not mtype:
-                m = re.search(r"^\s+type:\s*(\w+)", f.read_text(errors="ignore"), re.M)
+                m = re.search(r"^\s+type:\s*(\w+)", self.contents[f], re.M)
                 mtype = m.group(1) if m else "note"
             scope = _scope_from_claude_dir(f.parent.parent.name)
             title = meta.get("name", f.stem)
@@ -95,7 +106,7 @@ class Harvester:
         f = HOME / ".codex" / "memories" / "memory_summary.md"
         if not f.exists() or not self.changed(f):
             return
-        sections = re.split(r"\n## ", "\n" + f.read_text(errors="ignore"))
+        sections = re.split(r"\n## ", "\n" + self.contents[f])
         kinds = {"User Profile": "profile", "User preferences": "preference", "General Tips": "tip"}
         seen = []
         for sec in sections:
@@ -115,7 +126,7 @@ class Harvester:
         f = HOME / ".gemini" / "GEMINI.md"
         if not f.exists() or not self.changed(f):
             return
-        m = re.search(r"## Gemini Added Memories\n(.*?)(?=\n#|\n<!--|\Z)", f.read_text(errors="ignore"), re.S)
+        m = re.search(r"## Gemini Added Memories\n(.*?)(?=\n#|\n<!--|\Z)", self.contents[f], re.S)
         lines = [l.strip().lstrip("-* ").strip() for l in (m.group(1).splitlines() if m else [])]
         lines = [l for l in lines if l]
         for line in lines:
@@ -129,7 +140,7 @@ class Harvester:
             if not self.changed(f):
                 continue
             kind = "profile" if f.stem.upper() == "USER" else "note"
-            entries = [e.strip() for e in f.read_text(errors="ignore").split("§") if e.strip()]
+            entries = [e.strip() for e in self.contents[f].split("§") if e.strip()]
             for entry in entries:
                 self.add(entry, source="hermes", kind=kind, scope="personal",
                          origin=f"hermes:{f.stem}:{note_id(entry)}", ts=file_mtime_iso(f))
@@ -141,10 +152,15 @@ class Harvester:
         for f in sorted(inbox.glob("*")):
             if f.is_dir() or f.suffix not in (".md", ".txt"):
                 continue
-            meta, body = _frontmatter(f.read_text(errors="ignore"))
+            try:
+                content, _ = read_store_file(f, SELF)
+            except (OSError, ValueError):
+                log("harvest skipped unsafe or oversized inbox file")
+                continue
+            meta, body = _frontmatter(scrub_secrets(content))
             self.add(body.strip(), source=meta.get("source", "inbox"), kind=meta.get("kind", "note"),
                      scope=meta.get("scope", "personal"), origin=f"inbox:{f.name}", ts=file_mtime_iso(f))
-            done.mkdir(exist_ok=True)
+            private_dir(done)
             shutil.move(str(f), done / f.name)
 
     def run(self) -> int:

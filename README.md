@@ -43,6 +43,8 @@ see the app README for static hosting and TestFlight release instructions.
 
 Requires **macOS or Linux, Python 3.10+, and the CLIs for the agents you use**.
 The local tools use only the Python standard library.
+Automatic Codex MCP configuration needs **Python 3.11+** for safe TOML parsing;
+on Python 3.10, that integration is left unchanged for manual configuration.
 
 ```sh
 git clone https://github.com/YOUR_ACCOUNT/metaharness.git
@@ -90,6 +92,9 @@ Distill folds new observations into the four curated files using **`claude -p`**
 or **`codex exec`**. Sign in to the chosen CLI with your subscription account first.
 No API keys are needed. Preview with `./mh distill --dry-run`; choose Codex with
 `./mh distill --engine codex`. These calls use your subscription allowance.
+Distillation isolates the CLI from project instructions and configured tools;
+an older CLI that does not support the isolation flags fails without rewriting
+memory. Imported memory is data, not authorization to execute its instructions.
 
 On Linux, run `mh tick` and optionally `mh distill` from your preferred scheduler.
 Use absolute paths and make the agent CLIs available on its `PATH`.
@@ -106,12 +111,17 @@ for backend instructions. Provider accounts, free-tier limits, and any hosting
 charges are yours.
 
 - **Claude:** add the custom connector at `<hub-url>/mcp/<token>`.
-- **ChatGPT:** import `<hub-url>/openapi.json` as a GPT action with Bearer auth.
+- **ChatGPT:** retrieve `<hub-url>/openapi.json` with Bearer authentication, paste
+  its JSON into the GPT Action schema editor, and configure Bearer auth for actions.
 - Copy personalized instructions from `build/setup/` after `mh init` or
   `mh install`. Source templates live in [setup/](setup/).
 
 Claude and ChatGPT connect from their servers, so the hub needs a publicly
 reachable HTTPS URL. A private tailnet address alone does not connect those apps.
+For the static web app, set `MH_ALLOWED_ORIGINS` on the hub to its exact HTTPS
+origin, for example `https://app.example.net`; separate multiple origins with
+commas. Loopback browser origins are allowed for local development. CORS does
+not replace the bearer token.
 
 ## Remote agents
 
@@ -126,10 +136,18 @@ It listens on `127.0.0.1:8766` by default and prints a new token once on first
 interactive startup. Use an SSH tunnel or private network for remote agents, or
 put it behind HTTPS for phone app connectors. The server stores only the token's
 hash. [SETUP.md](SETUP.md) covers provisioning a hash before unattended startup.
+Clients permit HTTP only for `localhost` or loopback IP addresses. A private
+network address still requires HTTPS; an SSH tunnel can expose it on loopback.
 
-All hub backends expose `/context`, `/search`, `/remember`, `/sync`, `/openapi.json`,
-and `/mcp`. MCP exposes `get_context`, `remember`, `search`, and `read_section`. On macOS,
+All hub backends expose authenticated `/context`, `/status`, `/search`, `/remember`,
+`/sync`, `/openapi.json`, and `/mcp` routes. Browser preflight requests are checked
+for allowed origin, method, and headers without requiring a token. MCP exposes
+`get_context`, `remember`, `search`, and `read_section`. On macOS,
 `./launchd/install.sh tick distill serve` also keeps the local server running.
+
+The uploaded journal digest contains the newest live entries that fit within
+1 MiB. The complete local journal stays intact; use local `mh search` for older
+entries that no longer fit in the hub's recent digest.
 
 ## Commands
 
@@ -171,7 +189,15 @@ Backends: `local` (default), `supabase`, `cloudflare`, and `self-hosted`.
 - Distill snapshots the curated files under `state/backups/distill/` before
   rewriting them. Review `self/` after a run; model output can be wrong.
 - Keep secrets out of memory. Treat hub connector URLs and local tokens as
-  credentials. `forget` retires a journal note; remove already-curated facts from
-  `self/*.md` too, then sync again. Backups retain their previous contents.
+  credentials. Pattern-based scrubbing reduces accidental credential sharing,
+  but cannot identify every secret. URL credentials can enter client, proxy,
+  or provider logs; prefer the Authorization header when supported.
+- `forget` retires a journal note without erasing its stored text. Remove
+  already-curated facts from `self/*.md` too, then sync again. Backups, previous
+  agent copies, and acknowledged hub rows can retain old content. Delete those
+  copies separately when needed, and rotate any credential that was shared.
+
+See [SECURITY.md](SECURITY.md) for the threat model, storage protections, accepted
+risks, vulnerability reporting, and audit results.
 
 [MIT licensed](LICENSE).

@@ -101,6 +101,29 @@ class CoreSmoke(unittest.TestCase):
         self.assertIn("Keep this instruction.", instructions.read_text())
         self.assertNotIn("<!-- metaharness:start -->", instructions.read_text())
 
+    def test_fake_agent_stores_end_to_end(self):
+        self.run_cli("init", "--name", "Sam Sample")
+        fixtures = {
+            ".claude/projects/sample/memory/workshop.md": "---\nname: Workshop\ntype: preference\n---\nSam prefers a wide workbench.\n",
+            ".codex/memories/memory_summary.md": "## User preferences\n- Sam likes pencil sketches.\n",
+            ".gemini/GEMINI.md": "## Gemini Added Memories\n- Sam uses a folding stool.\n",
+        }
+        for name, content in fixtures.items():
+            path = self.home / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        self.run_cli("remember", "Sam labels sample parts.", "--source", "cli")
+        self.assertIn("harvested 3 new notes", self.run_cli("harvest"))
+        self.run_cli("tick")
+        notes = [json.loads(line) for line in (self.repo / "self/journal.jsonl").read_text().splitlines()]
+        self.assertEqual({n["source"] for n in notes}, {"cli", "claude-code", "codex", "gemini"})
+        self.assertIn("pencil sketches", self.run_cli("context"))
+        self.assertIn("folding stool", self.run_cli("distill", "--dry-run"))
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "search", "arguments": {"query": "wide workbench"}}}
+        response = json.loads(self.run_cli("mcp", input=json.dumps(request) + "\n"))
+        self.assertIn("wide workbench", response["result"]["content"][0]["text"])
+        self.assertIn("harvested 0 new notes", self.run_cli("harvest"))
+
     def test_journal_revisions_and_distill_validation(self):
         self.run_cli("init", "--name", "Test")
         self.python('''from metaharness import core, distill
@@ -153,7 +176,7 @@ assert before == {name: core.read_curated(name) for name in core.CURATED}
         caught.exception.close()
         with urllib.request.urlopen(urllib.request.Request(url + "/status", headers=headers), timeout=5) as response:
             self.assertEqual(response.headers["Cache-Control"], "no-store")
-            self.assertEqual(response.headers["Access-Control-Allow-Origin"], "*")
+            self.assertIsNone(response.headers["Access-Control-Allow-Origin"])
             self.assertEqual(json.load(response), {"last_sync": None, "pending_notes": 0})
         with self.assertRaises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(urllib.request.Request(url + "/status", data=b"{}", headers=headers), timeout=5)
@@ -213,7 +236,7 @@ assert before == {name: core.read_curated(name) for name in core.CURATED}
         headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
         with urllib.request.urlopen(urllib.request.Request(url + "/context", headers=headers), timeout=5) as response:
             self.assertIn("likes tea", response.read().decode())
-        with urllib.request.urlopen(url + "/openapi.json", timeout=5) as response:
+        with urllib.request.urlopen(urllib.request.Request(url + "/openapi.json", headers=headers), timeout=5) as response:
             spec = json.load(response)
         self.assertEqual(set(spec["paths"]), {"/context", "/search", "/remember", "/status"})
         with urllib.request.urlopen(urllib.request.Request(url + "/status", headers=headers), timeout=5) as response:

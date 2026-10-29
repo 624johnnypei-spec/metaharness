@@ -4,6 +4,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
+import socket
+import threading
+import time
 import re
 import secrets
 import sys
@@ -12,6 +16,8 @@ from urllib.parse import parse_qs, urlsplit
 
 from .core import CURATED, KINDS, STATE, add_note, load_state, read_curated, render_brief, save_state, search, user_name
 from .hub import Hub, string
+from .security import DATA_NOTICE, MAX_BODY, MAX_BATCH, MAX_META, bounded, metadata
+from .http_security import RateLimiter, RequestError, allowed_origin
 
 PROTOCOL = "2025-06-18"
 
@@ -92,13 +98,15 @@ def handle(msg: dict, default_source: str, hub: Hub | None = None) -> dict | Non
     if mid is None:  # notification
         return None
     try:
+        if not isinstance(msg.get("params", {}), dict):
+            raise ValueError("params must be an object")
         person = hub.name() if hub else user_name()
         if method == "initialize":
             result = {
                 "protocolVersion": msg.get("params", {}).get("protocolVersion", PROTOCOL),
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "metaharness", "version": "0.1.0"},
-                "instructions": f"Shared memory of {person}, used by all of their AI agents.",
+                "instructions": f"Shared memory of {person}, used by all of their AI agents. {DATA_NOTICE}",
             }
         elif method == "ping":
             result = {}
@@ -120,7 +128,12 @@ def handle(msg: dict, default_source: str, hub: Hub | None = None) -> dict | Non
 
 
 def serve_stdio(source: str = "mcp-client") -> None:
-    for line in sys.stdin:
+    while True:
+        line = sys.stdin.readline(MAX_BODY + 1)
+        if not line:
+            break
+        if len(line.encode()) > MAX_BODY:
+            raise ValueError("MCP request too large")
         line = line.strip()
         if not line:
             continue
@@ -129,6 +142,8 @@ def serve_stdio(source: str = "mcp-client") -> None:
         except json.JSONDecodeError:
             continue
         msgs = msg if isinstance(msg, list) else [msg]
+        if len(msgs) > MAX_BATCH:
+            raise ValueError("MCP batch too large")
         replies = [r for r in (handle(m, source) for m in msgs) if r]
         if replies:
             sys.stdout.write(json.dumps(replies if isinstance(msg, list) else replies[0]) + "\n")
@@ -182,15 +197,45 @@ def openapi(base: str) -> dict:
 
 def serve_http(host: str, port: int, token_sha256: str | None = None) -> None:
     hub = Hub(server_digest(token_sha256))
+    limiter = RateLimiter()
+    origins = os.environ.get("MH_ALLOWED_ORIGINS", "")
+    methods = {"/context": "GET", "/status": "GET", "/search": "GET", "/remember": "POST", "/sync": "POST", "/openapi.json": "GET"}
 
     class H(BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(5)
+
+        def handle_one_request(self):
+            # Absolute deadline also covers clients drip-feeding headers before auth.
+            def expire():
+                try:
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            timer = threading.Timer(10, expire)
+            timer.daemon = True
+            timer.start()
+            try:
+                super().handle_one_request()
+            finally:
+                timer.cancel()
+
         def _send(self, code: int, body: str = "", ctype: str = "application/json", allow: str = "") -> None:
             data = body.encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+            if code == 429:
+                self.send_header("Retry-After", "60")
+            self.send_header("Vary", "Origin")
+            origin = self.headers.get("Origin", "")
+            if origin and allowed_origin(origin, origins):
+                self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Agent, MCP-Protocol-Version")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
             if allow:
@@ -202,14 +247,42 @@ def serve_http(host: str, port: int, token_sha256: str | None = None) -> None:
             self._send(code, json.dumps(body))
 
         def _body(self):
+            if self.headers.get("Transfer-Encoding") or len(self.headers.get_all("Content-Length", [])) > 1:
+                raise RequestError(400, "invalid request framing")
             length = int(self.headers.get("Content-Length") or 0)
-            if not 0 <= length <= 8 * 1024 * 1024:
-                raise ValueError("invalid request size")
-            return json.loads(self.rfile.read(length) or b"{}")
+            if not 0 <= length <= MAX_BODY:
+                raise RequestError(413, "request too large")
+            chunks, remaining, deadline = [], length, time.monotonic() + 10
+            while remaining:
+                self.connection.settimeout(max(0.01, min(5, deadline - time.monotonic())))
+                if time.monotonic() >= deadline:
+                    raise RequestError(408, "request timed out")
+                chunk = self.rfile.read1(min(65536, remaining))
+                if not chunk:
+                    raise RequestError(400, "incomplete request")
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            return json.loads(b"".join(chunks) or b"{}")
 
         def _handle(self) -> None:
             url = urlsplit(self.path)
             path = url.path
+            if len(self.path) > 4096:
+                raise RequestError(414, "request URL too long")
+            if not allowed_origin(self.headers.get("Origin", ""), origins):
+                raise RequestError(403, "origin not allowed")
+            if not limiter.allow("ingress:" + self.client_address[0], 240):
+                raise RequestError(429, "request rate limit; retry later")
+            mcp = path == "/mcp" or re.fullmatch(r"/mcp/[^/]+", path)
+            token = path[len("/mcp/"):] if mcp and path.startswith("/mcp/") else self.headers.get("Authorization", "")
+            token = re.sub(r"^Bearer\s+", "", token, flags=re.I).strip()
+            if not token or len(token) > 512 or not hmac.compare_digest(hashlib.sha256(token.encode()).hexdigest(), hub.digest()):
+                if not limiter.allow("bad:" + self.client_address[0], 20):
+                    raise RequestError(429, "too many authentication attempts; retry later")
+                self._json({"error": "unauthorized"}, 401)
+                return
+            if not limiter.allow("ok:" + self.client_address[0], 120):
+                raise RequestError(429, "request rate limit; retry later")
             if path == "/openapi.json" and self.command == "GET":
                 authority = self.headers.get("Host", f"{host}:{port}")
                 if not re.fullmatch(r"[A-Za-z0-9.\-:\[\]]+", authority):
@@ -218,13 +291,7 @@ def serve_http(host: str, port: int, token_sha256: str | None = None) -> None:
                 scheme = "https" if self.headers.get("X-Forwarded-Proto") == "https" else "http"
                 self._json(openapi(f"{scheme}://{authority}"))
                 return
-            mcp = path == "/mcp" or re.fullmatch(r"/mcp/[^/]+", path)
-            token = path[len("/mcp/"):] if mcp and path.startswith("/mcp/") else self.headers.get("Authorization", "")
-            token = re.sub(r"^Bearer\s+", "", token, flags=re.I).strip()
-            if not token or not hmac.compare_digest(hashlib.sha256(token.encode()).hexdigest(), hub.digest()):
-                self._json({"error": "unauthorized"}, 401)
-                return
-            source = self.headers.get("X-Agent", "remote")
+            source = metadata(self.headers.get("X-Agent", "remote"), "source")
             if mcp:
                 if self.command == "DELETE":
                     self._send(204)
@@ -233,13 +300,21 @@ def serve_http(host: str, port: int, token_sha256: str | None = None) -> None:
                 else:
                     body = self._body()
                     msgs = body if isinstance(body, list) else [body]
-                    replies = [r for r in (handle(msg, source, hub) for msg in msgs) if r]
+                    if not msgs or len(msgs) > MAX_BATCH:
+                        raise RequestError(400, "MCP batch too large")
+                    replies, reply_bytes = [], 2
+                    for msg in msgs:
+                        reply = handle(msg, source, hub)
+                        if reply:
+                            reply_bytes += len(json.dumps(reply).encode()) + 1
+                            if reply_bytes > MAX_BODY:
+                                raise RequestError(413, "response too large")
+                            replies.append(reply)
                     if replies:
                         self._json(replies if isinstance(body, list) else replies[0])
                     else:
                         self._send(202)
                 return
-            methods = {"/context": "GET", "/status": "GET", "/search": "GET", "/remember": "POST", "/sync": "POST", "/openapi.json": "GET"}
             if path not in methods:
                 self._json({"error": "not found"}, 404)
             elif self.command != methods[path]:
@@ -259,7 +334,11 @@ def serve_http(host: str, port: int, token_sha256: str | None = None) -> None:
         def do_GET(self) -> None:
             try:
                 self._handle()
-            except (ValueError, KeyError, TypeError, AttributeError):
+            except RequestError as error:
+                self._json({"error": str(error)}, error.status)
+            except (TimeoutError, socket.timeout):
+                self._json({"error": "request timed out"}, 408)
+            except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
                 self._json({"error": "invalid request"}, 400)
             except Exception:
                 self._json({"error": "server error"}, 500)
@@ -270,10 +349,37 @@ def serve_http(host: str, port: int, token_sha256: str | None = None) -> None:
         do_PATCH = do_GET
 
         def do_OPTIONS(self) -> None:
-            self._send(204)
+            path = urlsplit(self.path).path
+            allowed = ("POST", "DELETE") if path == "/mcp" or re.fullmatch(r"/mcp/[^/]+", path) else (methods.get(path),)
+            headers = {item.strip().lower() for item in self.headers.get("Access-Control-Request-Headers", "").split(",") if item.strip()}
+            if (not self.headers.get("Origin") or not allowed_origin(self.headers.get("Origin", ""), origins)
+                    or self.headers.get("Access-Control-Request-Method") not in allowed
+                    or not headers <= {"authorization", "content-type", "x-agent", "mcp-protocol-version"}):
+                self._json({"error": "preflight not allowed"}, 403)
+            elif not limiter.allow("options:" + self.client_address[0], 120):
+                self._json({"error": "request rate limit; retry later"}, 429)
+            else:
+                self._send(204)
 
         def log_message(self, *args) -> None:
             pass
 
     print(f"metaharness http on {host}:{port}", file=sys.stderr)
-    ThreadingHTTPServer((host, port), H).serve_forever()
+    class BoundedServer(ThreadingHTTPServer):
+        daemon_threads = True
+        slots = threading.BoundedSemaphore(32)
+        def process_request(self, request, client_address):
+            if not self.slots.acquire(blocking=False):
+                self.shutdown_request(request)
+                return
+            try:
+                super().process_request(request, client_address)
+            except BaseException:
+                self.slots.release()
+                raise
+        def process_request_thread(self, request, client_address):
+            try:
+                super().process_request_thread(request, client_address)
+            finally:
+                self.slots.release()
+    BoundedServer((host, port), H).serve_forever()

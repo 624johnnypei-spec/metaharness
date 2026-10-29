@@ -44,6 +44,9 @@ Metaharness account or hosted service to sign up for.
 ## 2. Check the environment
 
 - Require macOS or Linux and Python 3.10+. Locate the CLIs the user actually uses.
+- Use Python 3.11+ to install the Codex MCP integration automatically. Python
+  3.10 still runs the other local commands; Codex TOML is left unchanged when
+  safe parsing is unavailable or its representation cannot be edited safely.
 - Read `./mh --help` and the selected backend's docs under [remote/](remote/README.md).
 - Keep existing `self/`, `state/`, and agent settings. Do not invent personal
   facts, overwrite a populated profile, or copy another person's memory.
@@ -142,11 +145,21 @@ as part of copying code; the first sync sends the intended memory snapshot.
    directory. Adjust the listener only when the chosen private network needs
    it. Keep the process running with the host's service manager; use absolute
    executable paths and the same `MH_HOME` in its service configuration.
+   For a static web client, also set `MH_ALLOWED_ORIGINS` in the server process
+   or service environment to the client's exact HTTPS origin, such as
+   `https://app.example.net`. Multiple origins are comma-separated, without
+   paths or trailing slashes. Loopback browser origins work for local testing.
+   Configure the corresponding setting on cloud hubs using their backend docs.
 4. On the local curator, initialize integrations:
 
    ```sh
    ./mh init --name "Your Name" --backend self-hosted --url https://memory.example.net
    ```
+
+Client URLs require HTTPS except for `localhost` or loopback IP addresses.
+Private LAN and tailnet addresses also need HTTPS; use a loopback SSH tunnel
+when testing a remote server without TLS. Clients reject hub redirects, so
+configure the final hub URL directly.
 
 ## 4. Verify the real setup
 
@@ -176,29 +189,37 @@ curl --fail --silent --show-error "$MH_HUB_URL/context" \
 curl --fail --silent --show-error "$MH_HUB_URL/remember" \
   -H "Authorization: Bearer $MH_HUB_TOKEN" -H 'Content-Type: application/json' \
   -d '{"text":"Metaharness setup check: hub to local","kind":"note","source":"setup-check"}'
+curl --fail --silent --show-error "$MH_HUB_URL/openapi.json" \
+  -H "Authorization: Bearer $MH_HUB_TOKEN" -o build/openapi.json
 ./mh tick
 ./mh search "hub to local"
 unset MH_HUB_TOKEN
 ```
 
 Require the first response to contain the local test note and the final search
-to contain the hub test note. Confirm an unauthenticated `/context` request
-returns 401 and unauthenticated `/openapi.json` returns the schema.
+to contain the hub test note. Confirm unauthenticated `/context`, `/status`,
+and `/openapi.json` requests return 401. The authenticated schema retrieval
+above must succeed. Browser preflights do not contain a bearer token; verify
+they succeed only for an allowed origin, route, method, and header set.
 
 Then connect the user's phone client:
 
 - Claude: configure `<hub-url>/mcp/<token>` and call `get_context`.
-- ChatGPT custom GPT: import `<hub-url>/openapi.json`, configure API Key / Bearer
-  authentication, and call `getContext`.
+- ChatGPT custom GPT: paste the authenticated `build/openapi.json` response
+  into the Action schema editor, configure API Key / Bearer authentication,
+  and call `getContext`. Do not rely on unauthenticated URL import or put a
+  token in the schema URL. Keep the GPT private.
 - Use the personalized instructions in `build/setup/`. Set up these UI steps
   when browser access is available; ask the user only for a required login or a
   client-side action you cannot perform. Have the phone save a second setup
   note, then run `mh tick` and find it locally. A curl check proves the endpoint,
   not that the phone client's connector is enabled.
 
-Retire test notes with `mh forget <id>` and run `mh tick` again. Remote storage
-can retain acknowledged rows; remove the setup-check rows using the selected
-backend's data tools if the user wants no test data retained.
+Retire test notes with `mh forget <id>` and run `mh tick` again. Retirement does
+not erase the original local journal text, existing backups, or acknowledged
+hub rows. Remove those copies separately if the user needs full removal.
+Only the newest live journal entries fitting within 1 MiB are uploaded in the
+remote digest; the full local journal remains available to local `mh search`.
 
 ## 5. Finish the handoff
 
@@ -215,6 +236,12 @@ backend's data tools if the user wants no test data retained.
 - Confirm `state/config.json` records the chosen name, backend, and URL. Keep
   secrets in `state/remote.json`, which is private and gitignored. Do not commit
   `self/`, `state/`, `build/`, credentials, or deployment account identifiers.
+- Explain that secret-pattern scrubbing is a safeguard, not a guarantee that
+  arbitrary sensitive text is detected. Treat connector and app connection
+  URLs as credentials; prefer bearer headers and redact URL paths in proxy logs.
 - Report what actually passed: local CLI, stdio MCP, both hub directions, phone
   client, and any scheduled service. Name anything still unverified; do not
   claim a phone connection from curl alone.
+
+See [SECURITY.md](SECURITY.md) for the threat model, accepted risks, and the
+security review. Do not describe this review as certification.

@@ -27,6 +27,9 @@ if not render_only and sys.platform != "darwin":
 root = Path(os.environ.get("MH_HOME", str(repo))).expanduser().resolve()
 state = root / "state"
 state.mkdir(parents=True, exist_ok=True, mode=0o700)
+if state.is_symlink():
+    raise SystemExit("state must not be a symbolic link")
+state.chmod(0o700)
 out = Path.home() / "Library" / "LaunchAgents"
 out.mkdir(parents=True, exist_ok=True)
 values = {
@@ -62,8 +65,13 @@ for job in dict.fromkeys(jobs):
             backup.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             shutil.copy2(path, backup)
             backup.chmod(0o600)
+    for log_key in ("StandardOutPath", "StandardErrorPath"):
+        fd = os.open(data[log_key], os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        os.fchmod(fd, 0o600)
+        os.close(fd)
     with path.open("wb") as f:
         plistlib.dump(data, f, sort_keys=False)
+    path.chmod(0o600)
     if render_only:
         print(f"rendered {path}")
         continue

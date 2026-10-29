@@ -9,6 +9,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .security import DATA_NOTICE, MAX_FILE, private_dir, private_write, scrub_secrets
 from .core import CURATED, ROOT, SELF, STATE, live_notes, log, now_iso, read_curated, update_journal, user_name
 
 PROMPT = """You maintain the shared memory that all of {name}'s AI agents read.
@@ -46,9 +47,19 @@ Output EXACTLY four blocks and nothing else, in this form:
 
 def _run(engine: str, prompt: str) -> str:
     if engine == "claude":
-        cmd = ["claude", "-p", "--model", "sonnet", "--output-format", "text", "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
+        cmd = ["claude", "-p", "--model", "sonnet", "--output-format", "text", "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--safe-mode", "--disable-slash-commands", "--no-session-persistence"]
     elif engine == "codex":
-        cmd = ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-"]
+        cmd = ["codex", "exec", "--skip-git-repo-check", "--strict-config",
+               "--ignore-user-config", "--ignore-rules", "--ephemeral",
+               "-c", 'default_permissions="mh_distill"',
+               "-c", 'permissions.mh_distill.filesystem={":root"="deny"}',
+               "-c", "permissions.mh_distill.network.enabled=false",
+               "-c", 'approval_policy="never"',
+               "-c", 'web_search="disabled"', "-c", "project_doc_max_bytes=0",
+               "-c", "mcp_servers={}"]
+        for feature in ("shell_tool", "unified_exec", "apps", "plugins", "hooks", "multi_agent", "multi_agent_v2", "image_generation"):
+            cmd += ["--disable", feature]
+        cmd += ["-"]
     else:
         raise ValueError("engine must be claude or codex")
     if not shutil.which(cmd[0]):
@@ -57,23 +68,32 @@ def _run(engine: str, prompt: str) -> str:
     for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "OPENAI_API_KEY",
                 "OPENAI_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"):
         env.pop(key, None)
-    r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=900, cwd=str(ROOT), env=env)
+    # No project instructions/config, inherited MCP, hooks, shell, or persistent session.
+    # Use the subscription login; do not copy credentials to the working directory.
+    with tempfile.TemporaryDirectory(prefix="mh-distill-") as work:
+        r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=900, cwd=work, env=env)
     if r.returncode != 0:
-        raise RuntimeError(f"{engine} failed: {r.stderr.strip()[:400]}")
+        raise RuntimeError(f"{engine} failed; check that the installed CLI supports the isolation flags")
     return r.stdout
 
 
 def _parse(out: str) -> dict[str, str]:
-    blocks = dict(re.findall(r"^=== (\S+\.md) ===\n(.*?)(?=^=== \S+\.md ===|\Z)", out, re.S | re.M))
+    if len(out.encode()) > MAX_FILE:
+        raise RuntimeError("model output too large; nothing written")
+    matches = re.findall(r"^=== (\S+\.md) ===\n(.*?)(?=^=== \S+\.md ===|\Z)", out, re.S | re.M)
+    if len(matches) != len(CURATED) or {name for name, _ in matches} != set(CURATED):
+        raise RuntimeError("model output must contain exactly four curated files; nothing written")
+    blocks = dict(matches)
     missing = [n for n in CURATED if not blocks.get(n, "").strip()]
     if missing:
         raise RuntimeError(f"model output missing {missing}; nothing written")
-    return {n: blocks[n].strip() + "\n" for n in CURATED}
+    return {n: scrub_secrets(blocks[n].strip()) + "\n" for n in CURATED}
 
 
 def distill(engine: str = "claude", dry_run: bool = False, max_notes: int = 120) -> str:
-    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with (STATE / "distill.lock").open("w") as lock:
+    private_dir(STATE)
+    with os.fdopen(os.open(STATE / "distill.lock", os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600), "w") as lock:
+        os.fchmod(lock.fileno(), 0o600)
         fcntl.flock(lock, fcntl.LOCK_EX)
         return _distill(engine, dry_run, max_notes)
 
@@ -84,19 +104,20 @@ def _distill(engine: str, dry_run: bool, max_notes: int) -> str:
         return "Nothing new to distill."
     files = "\n\n".join(f"=== {n} (current) ===\n{read_curated(n)}" for n in CURATED)
     notes = "\n".join(f"- [{n['ts'][:10]} {n['source']}/{n['kind']}/{n['scope']}] {n['text'][:700]}" for n in pending)
-    prompt = PROMPT.format(name=user_name(), today=now_iso()[:10], files=files, count=len(pending), notes=notes)
+    prompt = DATA_NOTICE + "\n\n" + PROMPT.format(name=user_name(), today=now_iso()[:10], files=files, count=len(pending), notes=notes)
     if dry_run:
         return prompt
     new = _parse(_run(engine, prompt))
     backups = STATE / "backups" / "distill"
-    backups.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private_dir(backups.parent)
+    private_dir(backups)
     snapshot = Path(tempfile.mkdtemp(prefix=now_iso().replace(":", "-") + "-", dir=backups))
     for name in CURATED:
         if (SELF / name).exists():
-            shutil.copy2(SELF / name, snapshot / name)
-    shutil.copy2(SELF / "journal.jsonl", snapshot / "journal.jsonl")
+            private_write(snapshot / name, (SELF / name).read_text())
+    private_write(snapshot / "journal.jsonl", (SELF / "journal.jsonl").read_text())
     for name, text in new.items():
-        (SELF / name).write_text(text)
+        private_write(SELF / name, text)
     ids = {n["id"] for n in pending}
 
     def mark(n: dict) -> bool:

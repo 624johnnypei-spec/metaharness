@@ -11,6 +11,7 @@ import shlex
 import shutil
 from pathlib import Path
 
+from .security import private_dir, private_write
 from .core import BUILD, HOME, ROOT, STATE, log, user_name
 
 START, END = "<!-- metaharness:start -->", "<!-- metaharness:end -->"
@@ -50,10 +51,13 @@ def upsert_block(p: Path, body: str) -> bool:
     block = f"{START}\n{body.strip()}\n{END}"
     new = pattern.sub(lambda _: block, old) if pattern.search(old) else old + ("\n\n" if old else "") + block + "\n"
     if new == old:
+        if p.exists():
+            p.chmod(0o600)
         return False
     _backup(p)
-    p.parent.mkdir(parents=True, exist_ok=True)
+    private_dir(p.parent)
     p.write_text(new)
+    p.chmod(0o600)
     return True
 
 
@@ -63,9 +67,12 @@ def remove_block(p: Path) -> bool:
     old = p.read_text()
     new = _block_pattern(old).sub("", old)
     if new == old:
+        if p.exists():
+            p.chmod(0o600)
         return False
     _backup(p)
     p.write_text(new)
+    p.chmod(0o600)
     return True
 
 
@@ -114,11 +121,26 @@ def _json_mcp(path: Path) -> str:
 def _codex_toml() -> str:
     path = HOME / ".codex" / "config.toml"
     old = path.read_text() if path.exists() else ""
+    # Preserve unfamiliar valid TOML representations instead of guessing edits.
+    try:
+        import tomllib
+    except ImportError:
+        raise ValueError("Python 3.11+ is required to safely edit Codex TOML; configure its MCP manually")
+    original = tomllib.loads(old)
+    if '"""' in old or "'" * 3 in old:
+        raise ValueError("multiline TOML requires manual MCP configuration; file left unchanged")
     section = ("[mcp_servers.metaharness]\n" + f"command = {json.dumps(MH)}\n" +
                'args = ["mcp"]\n\n[mcp_servers.metaharness.env]\n' + f"MH_HOME = {json.dumps(str(ROOT))}\n")
     pattern = re.compile(r'''^[ \t]*\[mcp_servers\.(?:metaharness|"metaharness"|'metaharness')(?:\.[^\]]+)?\][ \t]*(?:\#[^\n]*)?(?:\n|\Z).*?(?=^[ \t]*\[|\Z)''', re.M | re.S)
     remaining = pattern.sub("", old)
     new = remaining.rstrip() + ("\n\n" if remaining.strip() else "") + section
+    parsed = tomllib.loads(new)
+    original_servers = original.get("mcp_servers", {})
+    if not isinstance(original_servers, dict):
+        raise ValueError("invalid MCP configuration")
+    expected = {**original, "mcp_servers": {**original_servers, "metaharness": parsed["mcp_servers"]["metaharness"]}}
+    if parsed != expected:
+        raise ValueError("unsupported TOML representation; file left unchanged")
     if new == old:
         return "already"
     _backup(path)
@@ -154,7 +176,7 @@ def render_setup() -> list[str]:
         text = source.read_text().replace("{{NAME}}", user_name()).replace("{{MH}}", shlex.quote(MH))
         path = out / source.name
         if not path.exists() or path.read_text() != text:
-            path.write_text(text)
+            private_write(path, text)
         paths.append(str(path))
     return paths
 
@@ -180,6 +202,6 @@ def install_skills() -> dict[str, str]:
         else:
             _backup(path)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text)
+            private_write(path, text)
             result[name] = "added"
     return result
