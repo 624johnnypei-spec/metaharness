@@ -1,7 +1,8 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
-import { fonts, useTheme } from "../theme";
-import { Label, Txt } from "./ui";
+import { useTheme } from "../theme";
+import { Action, Txt } from "./ui";
+import { Icon } from "./icons";
 
 export function useResource<T>(load: () => Promise<T>, refreshKey = 0) {
   const [value, setValue] = useState<T | null>(null);
@@ -29,32 +30,34 @@ export function useResource<T>(load: () => Promise<T>, refreshKey = 0) {
   return { value, busy, error, refresh };
 }
 
-export function ErrorNotice({ message }: { message: string }) {
+export function ErrorNotice({ message, onRetry }: { message: string; onRetry?: () => void }) {
   const t = useTheme();
   if (!message) return null;
-  return <View accessibilityRole="alert" style={{ borderLeftWidth: 2, borderLeftColor: t.accent, paddingLeft: 14, paddingVertical: 5, marginBottom: 22 }}>
-    <Txt style={{ fontSize: 14 }}>{message}</Txt>
+  return <View accessibilityRole="alert" style={{ backgroundColor: t.surface, borderWidth: 1, borderColor: t.rule, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+    <Txt style={{ color: t.danger, fontSize: 15 }}>{message}</Txt>
+    {onRetry ? <Action label="Retry" onPress={onRetry} style={{ alignSelf: "flex-start", marginTop: 4 }} /> : null}
   </View>;
 }
 
-export function Empty({ title, children }: { title: string; children: ReactNode }) {
-  const t = useTheme();
-  return <View style={{ paddingVertical: 28, gap: 8, borderBottomWidth: 1, borderBottomColor: t.rule }}>
-    <Txt style={{ fontFamily: fonts.display, fontSize: 29, lineHeight: 35 }}>{title}</Txt>
-    <Txt muted style={{ fontSize: 14, maxWidth: 520 }}>{children}</Txt>
+export function Empty({ title, action }: { title: string; action?: ReactNode }) {
+  return <View style={{ paddingVertical: 24, alignItems: "flex-start", gap: 8 }}>
+    <Txt muted style={{ fontSize: 16 }}>{title}</Txt>{action}
   </View>;
 }
 
-export function Collapsible({ title, index, children, initiallyOpen = true }: { title: string; index?: number; children: ReactNode; initiallyOpen?: boolean }) {
+export function Collapsible({ title, meta, children, initiallyOpen = true }: { title: string; meta?: ReactNode; children: ReactNode; initiallyOpen?: boolean }) {
   const t = useTheme();
   const [open, setOpen] = useState(initiallyOpen);
-  return <View style={{ borderBottomWidth: 1, borderBottomColor: t.rule, marginBottom: 12 }}>
-    <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ expanded: open }} aria-expanded={open} onPress={() => setOpen(!open)} style={({ pressed }) => ({ flexDirection: "row", gap: 14, alignItems: "center", paddingVertical: 18, opacity: pressed ? 0.6 : 1 })}>
-      {index !== undefined ? <Label style={{ width: 24 }}>{String(index + 1).padStart(2, "0")}</Label> : null}
-      <Txt style={{ flex: 1, fontFamily: fonts.display, fontSize: 29, lineHeight: 35 }}>{title}</Txt>
-      <Txt muted mono style={{ fontSize: 22, width: 20, textAlign: "center" }}>{open ? "−" : "+"}</Txt>
+  return <View style={{ borderBottomWidth: 0.5, borderBottomColor: t.rule, marginBottom: 8 }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ expanded: open }} aria-expanded={open} onPress={() => setOpen(!open)}
+      style={({ pressed }) => ({ flexDirection: "row", gap: 12, alignItems: "center", paddingVertical: 16, opacity: pressed ? 0.6 : 1 })}>
+      <View style={{ flex: 1, gap: 3 }}>
+        <Txt style={{ fontSize: 19, lineHeight: 25, fontWeight: "600" }}>{title}</Txt>
+        {meta}
+      </View>
+      <View style={{ transform: [{ rotate: open ? "90deg" : "0deg" }] }}><Icon name="chevron" size={14} color={t.muted} /></View>
     </Pressable>
-    {open ? <View style={{ paddingBottom: 22 }}>{children}</View> : null}
+    {open ? <View style={{ paddingBottom: 18 }}>{children}</View> : null}
   </View>;
 }
 

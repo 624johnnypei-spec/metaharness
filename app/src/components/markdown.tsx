@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { fonts, useTheme } from "../theme";
 
@@ -21,6 +21,7 @@ function tableCells(line: string) {
 /** The small markdown vocabulary used by the hub's personal knowledge sections. */
 export function Markdown({ text, compact = false }: MarkdownProps) {
   const theme = useTheme();
+  const desktop = useWindowDimensions().width >= 900;
   const [linkError, setLinkError] = useState<string | null>(null);
 
   async function openLink(url: string) {
@@ -48,13 +49,13 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
       const key = `${keyPrefix}-${match.index}`;
       if (match[2] || match[3]) {
         nodes.push(
-          <Text key={key} style={{ fontFamily: fonts.bold }}>
+          <Text key={key} style={{ fontWeight: "600" }}>
             {inline(match[2] || match[3], key)}
           </Text>,
         );
       } else if (match[4]) {
         nodes.push(
-          <Text key={key} style={{ fontFamily: fonts.mono, fontSize: 13 }}>
+          <Text key={key} style={{ fontFamily: fonts.mono, fontSize: 14 }}>
             {match[4]}
           </Text>,
         );
@@ -67,7 +68,7 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
             key={key}
             accessibilityRole="link"
             onPress={() => void openLink(url)}
-            style={{ textDecorationLine: "underline" }}
+            style={{ color: theme.accent, textDecorationLine: "underline" }}
           >
             {match[5]}
           </Text>,
@@ -84,8 +85,8 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
   const body = {
     color: theme.ink,
     fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: desktop ? 16 : 17,
+    lineHeight: desktop ? 24 : 26,
   };
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].trim();
@@ -100,8 +101,8 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
         index += 1;
       }
       blocks.push(
-        <ScrollView key={`code-${index}`} horizontal style={{ marginVertical: 10, borderWidth: 1, borderColor: theme.rule }}>
-          <Text selectable style={[body, { fontFamily: fonts.mono, fontSize: 12, padding: 16 }]}>{code.join("\n")}</Text>
+        <ScrollView key={`code-${index}`} horizontal style={{ marginVertical: 10, borderRadius: 8, borderWidth: 0.5, borderColor: theme.rule }}>
+          <Text selectable style={[body, { fontFamily: fonts.mono, fontSize: 13, padding: 14 }]}>{code.join("\n")}</Text>
         </ScrollView>,
       );
       continue;
@@ -113,7 +114,7 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
         index += 1;
         quote.push(lines[index].trim().replace(/^>\s?/, ""));
       }
-      blocks.push(<View key={`quote-${index}`} style={{ borderLeftWidth: 2, borderLeftColor: theme.accent, paddingLeft: 16, marginVertical: 10 }}>
+      blocks.push(<View key={`quote-${index}`} style={{ borderLeftWidth: 2, borderLeftColor: theme.rule, paddingLeft: 14, marginVertical: 10 }}>
         <Text selectable style={[body, { color: theme.muted }]}>{inline(quote.join(" "), `quote-${index}`)}</Text>
       </View>);
       continue;
@@ -150,8 +151,8 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
                     body,
                     styles.cell,
                     rowIndex === 0 && {
-                      fontFamily: fonts.medium,
-                      fontSize: 12,
+                      fontWeight: "600",
+                      fontSize: 14,
                     },
                   ]}
                 >
@@ -178,14 +179,15 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
             styles.heading,
             {
               color: theme.ink,
-              fontFamily: fonts.display,
+              fontFamily: fonts.body,
+              fontWeight: "600",
               fontSize:
                 heading[1].length === 1
-                  ? 36
+                  ? 24
                   : heading[1].length === 2
-                    ? 32
-                    : 27,
-              marginTop: compact ? 10 : 17,
+                    ? 20
+                    : 17,
+              marginTop: compact ? 8 : 16,
             },
           ]}
         >
@@ -246,7 +248,7 @@ export default Markdown;
 
 const styles = StyleSheet.create({
   heading: { marginBottom: 8 },
-  bullet: { flexDirection: "row", gap: 8, marginBottom: 6 },
+  bullet: { flexDirection: "row", gap: 8, marginBottom: 7 },
   marker: { minWidth: 13 },
   bulletText: { flex: 1 },
   rule: { height: StyleSheet.hairlineWidth, marginVertical: 14 },
@@ -257,5 +259,5 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 10,
   },
-  cell: { flex: 1, minWidth: 0, fontSize: 13, lineHeight: 20 },
+  cell: { flex: 1, minWidth: 0, fontSize: 14, lineHeight: 21 },
 });

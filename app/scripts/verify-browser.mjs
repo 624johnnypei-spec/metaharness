@@ -54,6 +54,9 @@ try {
   await writeFile(join(curator, 'self/now.md'), '# Right now\n\nBuild a cardboard prototype of a reading stand.\n');
   await writeFile(join(curator, 'self/preferences.md'), '# Preferences\n\n- Use clear drawings.\n- Test the prototype before cutting wood.\n');
   await writeFile(join(curator, 'self/projects.md'), '# Projects\n\n## Reading stand\n\nA folding design for a sample community workshop.\n');
+  cli(curatorEnv, ['remember', 'The sample prototype needs a wider base before the workshop.', '--source', 'codex', '--kind', 'project']);
+  cli(curatorEnv, ['remember', 'Sam prefers clear drawings when reviewing a sample prototype.', '--source', 'claude-code', '--kind', 'preference']);
+  cli(curatorEnv, ['remember', 'Compare two hinges on the sample prototype.', '--source', 'gemini', '--kind', 'note']);
   const hubPort = await port();
   const webPort = await port();
   const hub = `http://127.0.0.1:${hubPort}`;
@@ -86,20 +89,21 @@ try {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${prefix}/${name}: horizontal overflow`);
     }
     await page.goto(site);
-    await expect(page.getByRole('button', { name: 'Open Demo', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Connect to your hub', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Try with sample data', exact: true })).toBeVisible();
     await screenshot('onboarding');
     if (mode === 'demo') {
-      await page.getByRole('button', { name: 'Open Demo', exact: true }).click();
+      await page.getByRole('button', { name: 'Try with sample data', exact: true }).click();
     } else {
       await page.getByRole('textbox', { name: 'Hub URL', exact: true }).fill(hub);
       await page.getByLabel('Token', { exact: true }).fill(token);
       await page.getByRole('button', { name: 'Test connection', exact: true }).click();
-      await expect(page.getByText('Connected. Your hub returned shared context.', { exact: true })).toBeVisible();
+      await expect(page.getByText('Connected', { exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Connect', exact: true }).click();
     }
-    await expect(page.getByRole('heading', { name: 'The brief.', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Brief', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: profileHeading, exact: true })).toBeVisible();
-    if (mode === 'demo') await expect(page.getByText('Demo · Fictional sample data. Captures stay in this session.', { exact: true })).toBeVisible();
+    if (mode === 'demo') await expect(page.getByText('Demo', { exact: true }).first()).toBeVisible();
     await screenshot('brief');
     await page.getByRole('button', { name: profileHeading, exact: true }).click();
     await expect(page.getByRole('button', { name: profileHeading, exact: true })).toHaveAttribute('aria-expanded', 'false');
@@ -107,20 +111,42 @@ try {
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
     await page.getByRole('tab', { name: 'Memory', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Memory', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Preferences', exact: true })).toBeVisible();
+    const sourceLabel = page.getByTestId('source-codex').first();
+    await expect(sourceLabel).toBeVisible();
+    const sourceColor = await sourceLabel.evaluate(element => ({
+      background: getComputedStyle(element).backgroundColor,
+      foreground: getComputedStyle(element.firstElementChild ?? element).color,
+    }));
+    assert.notEqual(sourceColor.background, 'rgba(0, 0, 0, 0)', 'Agent badges have a visible tint');
+    await expect(page.getByTestId('provenance-time').first()).toBeVisible();
     await screenshot('memory');
     await page.getByRole('tab', { name: 'Search', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search terms', exact: true }).fill('prototype');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
-    await expect(page.getByText('now.md', { exact: true })).toBeVisible();
+    await expect(page.getByText('now.md', { exact: true }).first()).toBeVisible();
+    await expect(page.getByTestId('source-codex').first()).toBeVisible();
+    assert.deepEqual(await page.getByTestId('source-codex').first().evaluate(element => ({
+      background: getComputedStyle(element).backgroundColor,
+      foreground: getComputedStyle(element.firstElementChild ?? element).color,
+    })), sourceColor, 'An agent has one consistent label color within a theme');
     await screenshot('search');
-    await page.getByRole('button', { name: /^(＋ )?Remember$/, exact: true }).click();
+    if (width >= 900) {
+      for (const shortcut of ['Meta+k', 'Control+k']) {
+        await page.keyboard.press(shortcut);
+        await expect(page.getByRole('textbox', { name: 'Note', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Close', exact: true }).click();
+        await expect(page.getByRole('textbox', { name: 'Note', exact: true })).toBeHidden();
+      }
+    }
+    await page.getByRole('button', { name: 'Remember', exact: true }).click();
     const note = `Sample browser capture ${width} ${colorScheme}: prefer clear workshop drawings.`;
-    await page.getByRole('textbox', { name: 'What should your agents remember?', exact: true }).fill(note);
+    await page.getByRole('textbox', { name: 'Note', exact: true }).fill(note);
     await page.getByRole('radio', { name: 'preference', exact: true }).click();
     await screenshot('capture');
-    await page.getByRole('button', { name: 'Remember this', exact: true }).click();
-    await expect(page.getByText(mode === 'demo' ? 'Demo capture saved for this session. Nothing was sent to a hub.' : 'Queued. Your agents can read this now. The curator’s next mh tick will import it locally.', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Save note', exact: true }).click();
+    await expect(page.getByText(mode === 'demo' ? 'Saved in Demo' : 'Queued for the next mh tick', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Done', exact: true }).click();
     if (mode === 'local') {
       assert.equal((await (await fetch(hub + '/status', { headers })).json()).pending_notes, 1);
@@ -132,20 +158,20 @@ try {
       assert.equal((await (await fetch(hub + '/status', { headers })).json()).pending_notes, 0);
     }
     await page.getByRole('tab', { name: 'Status', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'In the loop.', exact: true })).toBeVisible();
-    await expect(page.getByText('Last brief sync', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Status', exact: true })).toBeVisible();
+    await expect(page.getByText('Last sync', { exact: true })).toBeVisible();
     await screenshot('status');
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'In the loop.', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Status', exact: true })).toBeVisible();
     await page.getByRole('tab', { name: 'Settings', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Disconnect', exact: true })).toBeVisible();
     // Never capture settings screenshots after credentials are filled.
     await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Open Demo', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Try with sample data', exact: true })).toBeVisible();
     assert.equal(await page.evaluate(() => localStorage.getItem('metaharness.connection.v1')), null);
     assert.deepEqual(errors, [], `${prefix}: unexpected browser errors`);
-    reports.push({ mode, width, colorScheme, consoleErrors: errors.length, result: 'passed' });
-    console.log(`PASS ${prefix}: onboarding, brief, memory, search, capture, status, reload, disconnect; zero console errors`);
+    reports.push({ mode, width, colorScheme, provenance: 'passed', shortcuts: width >= 900 ? 'passed' : 'not applicable', consoleErrors: errors.length, result: 'passed' });
+    console.log(`PASS ${prefix}: onboarding, brief, memory, search, provenance, capture, status, reload, disconnect${width >= 900 ? ', keyboard shortcuts' : ''}; zero console errors`);
     await context.close();
   }
   await writeFile(join(output, 'browser-report.json'), JSON.stringify({ checks: reports, localCaptureTickRoundTrips: 4 }, null, 2) + '\n');

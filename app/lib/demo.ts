@@ -1,5 +1,17 @@
 import type { CuratedSection, SearchGroup } from "./types.ts";
 
+export type DemoNote = { text: string; source: string; timestamp: string };
+
+export function createDemoNotes(now = Date.now()): DemoNote[] {
+  // These are explicitly fictional examples. Offsets keep the sample useful
+  // when opened later; no dates or authors are presented as live hub records.
+  return [
+    { text: "Test the reading stand prototype with a heavy book before choosing the hinge.", source: "codex", timestamp: new Date(now - 35 * 60_000).toISOString() },
+    { text: "Sam prefers assembly guides with one drawing for each step.", source: "claude-code", timestamp: new Date(now - 3 * 3_600_000).toISOString() },
+    { text: "The workshop needs a folding stand that fits inside a small tool bag.", source: "chatgpt", timestamp: new Date(now - 26 * 3_600_000).toISOString() },
+  ];
+}
+
 // Entirely fictional. Nothing here is imported from a configured hub.
 export const demoSections: Record<CuratedSection, string> = {
   "profile.md": "# Profile\n\nSam is a fictional sample person, a furniture maker who also builds small software tools.\n\n- Enjoys working with wood, drawing, and long walks.\n- Learns best by making a small working version first.\n- Keeps a notebook of ideas for the next workshop session.",
@@ -8,16 +20,16 @@ export const demoSections: Record<CuratedSection, string> = {
   "projects.md": "# Projects\n\n## Folding reading stand\n\nA lightweight stand that packs flat. The next step is a cardboard prototype.\n\n## Workshop notes\n\nA simple collection of illustrated guides for the community workshop.\n\n| Project | Current focus |\n| --- | --- |\n| Reading stand | Test hinge designs |\n| Workshop notes | Draw an assembly guide |",
 };
 
-export function demoContext(notes: string[] = []): string {
-  return "# Sam — sample shared context\n\nThis is **Demo** content about a fictional person. It is not connected to a hub.\n\n" +
+export function demoContext(notes: DemoNote[] = createDemoNotes()): string {
+  return "# Sam\n\nDemo: a fictional person.\n\n" +
     Object.values(demoSections).map((section) => section.replace(/^# /, "## ").replace(/^## (?!Profile|Right now|Preferences|Projects)/gm, "### ")).join("\n\n") +
-    (notes.length ? "\n\n## Demo captures\n\n" + notes.map((note) => `- ${note}`).join("\n") : "");
+    (notes.length ? "\n\n## Recently learned by other agents\n\n" + notes.map((note) => `- [${note.timestamp} · ${note.source}] ${note.text}`).join("\n") : "");
 }
 
-export function demoSearch(query: string, notes: string[]): SearchGroup[] {
+export function demoSearch(query: string, notes: DemoNote[]): SearchGroup[] {
   const terms = query.toLowerCase().match(/[\p{L}\p{N}_]+/gu)?.filter((term) => term.length > 1) ?? [];
   if (!terms.length) return [];
-  const documents = [...Object.entries(demoSections), ...notes.map((note) => ["Demo captures", note])] as [string, string][];
+  const documents = [...Object.entries(demoSections), ...notes.map((note) => [`note ${note.timestamp} ${note.source}`, note.text])] as [string, string][];
   const groups = new Map<string, string[]>();
   for (const [source, content] of documents) {
     for (const part of content.split(/\n(?=#{1,3} |- )/)) {

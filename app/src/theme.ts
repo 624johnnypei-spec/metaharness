@@ -1,27 +1,15 @@
-import { useColorScheme } from "react-native";
+import { Platform, useColorScheme } from "react-native";
 
 export const palette = {
-  light: {
-    paper: "#F3F0E8",
-    ink: "#151513",
-    muted: "#7A786F",
-    rule: "#D9D4C7",
-    accent: "#E2462C",
-  },
-  dark: {
-    paper: "#0F0F0D",
-    ink: "#EDEAE2",
-    muted: "#89877F",
-    rule: "#2A2925",
-    accent: "#E2462C",
-  },
+  light: { paper: "#FFFFFF", grouped: "#F2F2F7", surface: "#FFFFFF", sidebar: "#F5F5F7", ink: "#000000", muted: "#66666B", rule: "#E4E4E8", accent: "#0066CC", selection: "#E7F1FF", danger: "#B3261E" },
+  dark: { paper: "#000000", grouped: "#000000", surface: "#1C1C1E", sidebar: "#171719", ink: "#FFFFFF", muted: "#A1A1A8", rule: "#303034", accent: "#64ABFF", selection: "#192D46", danger: "#FF8A80" },
 };
+const system = Platform.OS === "web" ? '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' : "System";
 export const fonts = {
-  display: "InstrumentSerif_400Regular",
-  body: "IBMPlexSans_400Regular",
-  medium: "IBMPlexSans_500Medium",
-  bold: "IBMPlexSans_600SemiBold",
-  mono: "IBMPlexMono_400Regular",
+  body: system,
+  medium: system,
+  bold: system,
+  mono: Platform.OS === "web" ? 'ui-monospace, "SFMono-Regular", monospace' : "ui-monospace",
 };
 export function useTheme() {
   const dark = useColorScheme() === "dark";

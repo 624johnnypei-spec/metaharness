@@ -27,7 +27,7 @@ test("default browser fetch keeps its global receiver and never leaks the token"
     assert.equal(await client.context(), "# Default fetch works");
     await assert.rejects(client.context(), (error: unknown) => {
       assert.ok(error instanceof Error);
-      assert.match(error.message, /Could not reach the hub/);
+      assert.match(error.message, /Hub unreachable/);
       assert.ok(!error.message.includes(credentials.token));
       return true;
     });
@@ -110,7 +110,7 @@ for (const status of [401, 403, 404, 405, 500, 503]) {
       assert.ok(error instanceof HubError);
       assert.equal(error.status, status);
       assert.ok(!error.message.includes(credentials.token));
-      assert.match(error.message, status === 401 || status === 403 ? /Token rejected/ : status === 404 || status === 405 ? /base URL/ : /hub returned an error/);
+      assert.match(error.message, status === 401 || status === 403 ? /Token rejected/ : status === 404 || status === 405 ? /base URL/ : /Hub request failed/);
       return true;
     });
   });
@@ -120,7 +120,7 @@ test("network failure never leaks a credential-bearing exception", async () => {
   const client = new HubClient(credentials, fetchWith(() => { throw new Error(`Failed ${credentials.token}`); }));
   await assert.rejects(client.context(), (error: unknown) => {
     assert.ok(error instanceof Error);
-    assert.match(error.message, /Could not reach the hub/);
+    assert.match(error.message, /Hub unreachable/);
     assert.ok(!error.message.includes(credentials.token));
     return true;
   });
@@ -128,24 +128,24 @@ test("network failure never leaks a credential-bearing exception", async () => {
 
 test("wrong URLs returning HTML or unexpected content types are rejected", async () => {
   for (const response of [new Response("<!doctype html><html>Login</html>"), new Response("# Looks like context", { headers: { "Content-Type": "text/html" } }), markdown("<html>Login</html>")]) {
-    await assert.rejects(new HubClient(credentials, fetchWith(() => response)).context(), /did not return a Metaharness response/);
+    await assert.rejects(new HubClient(credentials, fetchWith(() => response)).context(), /Not a Metaharness hub/);
   }
 });
 
 test("invalid JSON, MCP errors and invalid statuses are rejected safely", async () => {
-  await assert.rejects(new HubClient(credentials, fetchWith(() => new Response("invalid", { headers: { "Content-Type": "application/json" } }))).status(), /Metaharness response/);
+  await assert.rejects(new HubClient(credentials, fetchWith(() => new Response("invalid", { headers: { "Content-Type": "application/json" } }))).status(), /Metaharness hub/);
   for (const body of [{}, { last_sync: "yesterday", pending_notes: 0 }, { last_sync: null, pending_notes: -1 }, { last_sync: null, pending_notes: 1.2 }]) {
-    await assert.rejects(new HubClient(credentials, fetchWith(() => json(body))).status(), /Metaharness response/);
+    await assert.rejects(new HubClient(credentials, fetchWith(() => json(body))).status(), /Metaharness hub/);
   }
-  await assert.rejects(new HubClient(credentials, fetchWith(() => json({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text: credentials.token }] } }))).section("profile.md"), /could not read this section/);
-  await assert.rejects(new HubClient(credentials, fetchWith(() => json({ result: null }))).remember("Text", "note"), /Metaharness response/);
-  assert.throws(() => parseSearchResults("Some unrelated page"), /Metaharness response/);
+  await assert.rejects(new HubClient(credentials, fetchWith(() => json({ jsonrpc: "2.0", id: 1, result: { isError: true, content: [{ type: "text", text: credentials.token }] } }))).section("profile.md"), /Section could not be read/);
+  await assert.rejects(new HubClient(credentials, fetchWith(() => json({ result: null }))).remember("Text", "note"), /Metaharness hub/);
+  assert.throws(() => parseSearchResults("Some unrelated page"), /Metaharness hub/);
 });
 
 test("redirected responses are not consumed as trusted hub content", async () => {
   const response = markdown("# A page on a different origin");
   Object.defineProperty(response, "redirected", { value: true });
-  await assert.rejects(new HubClient(credentials, fetchWith(() => response)).context(), /Metaharness response/);
+  await assert.rejects(new HubClient(credentials, fetchWith(() => response)).context(), /Metaharness hub/);
 });
 
 test("only the exact demo token enables fictional data, with no network calls", async () => {

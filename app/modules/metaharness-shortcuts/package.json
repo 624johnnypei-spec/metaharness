@@ -1,0 +1,6 @@
+{
+  "name": "metaharness-shortcuts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native keyboard shortcuts for the Metaharness app"
+}

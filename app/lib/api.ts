@@ -1,4 +1,4 @@
-import { demoContext, demoSearch, demoSections } from "./demo.ts";
+import { createDemoNotes, demoContext, demoSearch, demoSections, type DemoNote } from "./demo.ts";
 import { validateCredentials } from "./links.ts";
 import { CURATED, KINDS } from "./types.ts";
 import type { Credentials, CuratedSection, RememberKind, RememberResponse, SearchGroup, Status } from "./types.ts";
@@ -14,7 +14,7 @@ export class HubError extends Error {
   }
 }
 
-const wrongResponse = () => new HubError("This address did not return a Metaharness response. Check the hub URL, including its base path.");
+const wrongResponse = () => new HubError("Not a Metaharness hub. Check the base URL.");
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
 export function parseSearchResults(text: string): SearchGroup[] {
@@ -32,7 +32,8 @@ export function parseSearchResults(text: string): SearchGroup[] {
 export class HubClient {
   private credentials: Credentials;
   private fetcher: typeof fetch;
-  private demoNotes: string[] = [];
+  private demoNotes: DemoNote[] = [];
+  private demoSampleNotes = createDemoNotes();
 
   constructor(credentials: Credentials, fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {
     this.credentials = { ...credentials };
@@ -64,13 +65,13 @@ export class HubClient {
         });
       } catch {
         throw new HubError(controller.signal.aborted
-          ? "The hub took too long to respond. Check the address and your connection."
-          : "Could not reach the hub. Check the URL, network connection, and whether the hub is running. HTTPS pages need an HTTPS hub.");
+          ? "Hub timed out. Check the URL and connection."
+          : "Hub unreachable. Check the URL and connection.");
       }
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) throw new HubError(`Token rejected (${response.status}). Check your token in Settings.`, response.status);
-        if (response.status === 404 || response.status === 405) throw new HubError("Hub route not found. Check the base URL and that your hub is up to date.", response.status);
-        throw new HubError(`The hub returned an error (${response.status}). Try again shortly.`, response.status);
+        if (response.status === 401 || response.status === 403) throw new HubError(`${response.status} — Token rejected. Check your token.`, response.status);
+        if (response.status === 404 || response.status === 405) throw new HubError(`${response.status} — Hub route not found. Check the base URL.`, response.status);
+        throw new HubError(`${response.status} — Hub request failed. Try again.`, response.status);
       }
       if (response.redirected) throw wrongResponse();
       const contentType = response.headers.get("content-type") ?? "";
@@ -85,7 +86,7 @@ export class HubClient {
   }
 
   async context(): Promise<string> {
-    if (this.demo) return demoContext(this.demoNotes);
+    if (this.demo) return demoContext([...this.demoSampleNotes, ...this.demoNotes]);
     return await this.request("/context", false) as string;
   }
 
@@ -96,14 +97,14 @@ export class HubClient {
       jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_section", arguments: { name } },
     });
     if (!isRecord(body) || body.jsonrpc !== "2.0" || body.id !== 1 || !isRecord(body.result)) throw wrongResponse();
-    if (body.result.isError) throw new HubError("The hub could not read this section. Check that the hub is up to date.");
+    if (body.result.isError) throw new HubError("Section could not be read. Update the hub and retry.");
     const content = body.result.content;
     if (!Array.isArray(content) || content.length === 0 || content.some((part) => !isRecord(part) || part.type !== "text" || typeof part.text !== "string")) throw wrongResponse();
     return content.map((part) => part.text).join("\n");
   }
 
   async search(query: string): Promise<SearchGroup[]> {
-    if (this.demo) return demoSearch(query, this.demoNotes);
+    if (this.demo) return demoSearch(query, [...this.demoSampleNotes, ...this.demoNotes]);
     return parseSearchResults(await this.request(`/search?q=${encodeURIComponent(query)}`, false) as string);
   }
 
@@ -121,8 +122,8 @@ export class HubClient {
     if (!KINDS.includes(kind)) throw new HubError("Choose a valid memory kind.");
     if (this.demo) {
       const normalized = clean.toLowerCase().replace(/\s+/g, " ");
-      if (this.demoNotes.some((note) => note.toLowerCase().replace(/\s+/g, " ") === normalized)) return { result: "Already known." };
-      this.demoNotes.push(clean);
+      if ([...this.demoSampleNotes, ...this.demoNotes].some((note) => note.text.toLowerCase().replace(/\s+/g, " ") === normalized)) return { result: "Already known." };
+      this.demoNotes.push({ text: clean, source: "app", timestamp: new Date().toISOString() });
       return { result: "Demo capture saved for this session. No note was sent to a hub." };
     }
     const body = await this.request("/remember", true, { text: clean, kind, source: "app" });

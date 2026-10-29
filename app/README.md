@@ -19,7 +19,11 @@ Native tokens use SecureStore / iOS Keychain with device-only accessibility. Web
 
 `mh remote setup --backend self-hosted --url https://your-hub.example` also prints a private `metaharness://connect?url=...&token=...` link. Open it on an installed native app to fill connection settings; test and connect to save. The link is a credential: do not share or log it. Native routing removes its query before navigation. There is no QR dependency in the Python standard library, so setup prints the link only.
 
-**Open Demo** sets the token to exactly `demo`. Only that exact value enables the clearly labelled fictional Sam sample; empty or invalid credentials never fall back to sample data. Demo notes last for the current app session and never reach a hub.
+**Try with sample data** sets the token to exactly `demo`. Only that exact value enables the clearly labelled fictional Sam sample; empty or invalid credentials never fall back to sample data. Demo notes last for the current app session and never reach a hub.
+
+The interface uses system fonts, follows the system color scheme, and supports native text scaling. On a phone, use the header **+** button to remember a note. On desktop, use **Remember** in the toolbar or **Cmd/Ctrl+K**.
+
+Native hardware shortcuts use the local `metaharness-shortcuts` Expo module. It is included in native builds; Expo Go keeps the touch controls available but does not include that module.
 
 ## Features and protocol
 
@@ -28,6 +32,8 @@ Native tokens use SecureStore / iOS Keychain with device-only accessibility. Web
 - Search: `GET /search?q=...`, grouped by source.
 - Remember: `POST /remember`, the hub's full kind list, source `app`, with a queued confirmation until the curator's next `mh tick`.
 - Status: authenticated `GET /status` returns `{last_sync, pending_notes}`. It reports actual hub state, not agent presence. Update older hubs to expose this route; the brief still works if sync metadata is unavailable.
+
+Journal notes and search results show recorded agent names with deterministic source colors and relative dates. The app preserves the precision of the hub data: a date-only note is never presented as a precise time, and curated files without an author are labelled accordingly. Section sync stamps describe the uploaded brief, not an unrecorded edit time.
 
 No task management or integrations outside the open-source hub protocol are included.
 
@@ -67,8 +73,8 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-The browser check starts a static preview and an actual local `mh serve` with temporary HOME and MH_HOME directories. It initializes a fictional curator, connects through onboarding, checks demo and real data at 390px and 1440px in both color schemes, captures a note through the app, runs `mh tick`, and verifies the local journal and hub acknowledgment. It also checks console errors, overflow, refresh, search, and disconnect. Temporary credentials never enter the output. Screenshots go to ignored `verification/`.
+The browser check starts a static preview and an actual local `mh serve` with temporary HOME and MH_HOME directories. It initializes a fictional curator, connects through onboarding, checks demo and real data at 390px and 1440px in both color schemes, captures a note through the app, runs `mh tick`, and verifies the local journal and hub acknowledgment. It also checks provenance labels, consistent agent colors, both desktop keyboard shortcuts, console errors, overflow, refresh, search, and disconnect. Temporary credentials never enter the output. Screenshots go to ignored `verification/`.
 
 `expo export -p ios` verifies the iOS JavaScript bundle and assets; it is not an Xcode compile, signed IPA, or device/TestFlight test. Native secure storage and OS deep-link delivery should also be exercised on a device before release.
 
-The 1024px opaque icon and light/dark splash artwork are original geometric marks. `python3 scripts/make-assets.py` regenerates them with Pillow (asset-authoring only, not an app dependency).
+The icon is an opaque 1024px geometric mark. The splash uses the mark on a plain light or dark background. `python3 scripts/make-assets.py` regenerates the assets with Pillow (asset-authoring only, not an app dependency).
