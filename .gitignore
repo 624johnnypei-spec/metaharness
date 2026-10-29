@@ -11,3 +11,9 @@ __pycache__/
 node_modules/
 .wrangler/
 .dev.vars*
+/app/.expo/
+/app/dist/
+/app/dist-ios/
+/app/ios/
+/app/android/
+/app/verification/

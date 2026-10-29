@@ -69,6 +69,12 @@ class Hub:
         with self.db() as db:
             return [dict(row) for row in db.execute("select * from mh_notes where pulled=0 order by ts")]
 
+    def status(self) -> dict:
+        with self.db() as db:
+            row = db.execute("select updated_at from mh_files where name='brief.md'").fetchone()
+            pending = db.execute("select count(*) from mh_notes where pulled=0").fetchone()[0]
+        return {"last_sync": row[0] if row else None, "pending_notes": pending}
+
     def context(self) -> str:
         brief = self.file("brief.md")
         if brief is None:

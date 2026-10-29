@@ -3,6 +3,7 @@ export type MemoryFile = { name: string; content: string };
 export interface Store {
   tokenHash(): Promise<string>;
   file(name: string): Promise<string>;
+  lastSync(): Promise<string | null>;
   files(names: string[]): Promise<MemoryFile[]>;
   pending(): Promise<Note[]>;
   insert(note: Note): Promise<boolean>;
@@ -154,6 +155,12 @@ function openapi(base: string) {
     components: { securitySchemes: { bearerAuth: { type: "http", scheme: "bearer" } } },
     paths: {
       "/context": { get: { operationId: "getContext", summary: "Get the shared context before answering", responses: markdown } },
+      "/status": { get: { operationId: "getStatus", summary: "Read the last brief sync time and pending note count",
+        responses: { "200": { description: "Sync status", content: { "application/json": { schema: {
+          type: "object", required: ["last_sync", "pending_notes"], properties: {
+            last_sync: { type: ["string", "null"], format: "date-time" }, pending_notes: { type: "integer", minimum: 0 },
+          },
+        } } } } } } },
       "/search": { get: { operationId: "searchMemory", summary: "Search shared memories",
         parameters: [{ name: "q", in: "query", required: true, schema: { type: "string" } }], responses: markdown } },
       "/remember": { post: { operationId: "remember", summary: "Save a durable personal fact", "x-openai-isConsequential": true,
@@ -192,6 +199,11 @@ return async (req: Request): Promise<Response> => {
     }
     if (parts.length !== 1) return json({ error: "not found" }, 404);
     if (route === "context" && req.method === "GET") return text(await context());
+    if (route === "status") {
+      if (req.method !== "GET") return new Response(null, { status: 405, headers: { ...CORS, Allow: "GET" } });
+      const [last_sync, notes] = await Promise.all([store.lastSync(), store.pending()]);
+      return json({ last_sync, pending_notes: notes.length });
+    }
     if (route === "search" && req.method === "GET") return text(await search(url.searchParams.get("q") ?? ""));
     if (route === "remember" && req.method === "POST") return json({ result: await remember(object(await req.json()), source) });
     if (route === "sync" && req.method === "POST") {

@@ -86,11 +86,24 @@ try {
     const spec = await r.json();
     assert.equal(spec.servers[0].url, base);
     assert.equal(spec.components.securitySchemes.bearerAuth.scheme, 'bearer');
-    assert.deepEqual(Object.keys(spec.paths).sort(), ['/context', '/remember', '/search']);
+    assert.deepEqual(Object.keys(spec.paths).sort(), ['/context', '/remember', '/search', '/status']);
+    assert.deepEqual(spec.paths['/status'].get.responses['200'].content['application/json'].schema.required,
+      ['last_sync', 'pending_notes']);
     assert.equal((await request('/context')).status, 401);
     assert.equal((await request('/context', { headers: { Authorization: 'Bearer wrong' } })).status, 401);
+    assert.equal((await request('/status')).status, 401);
+    assert.equal((await request('/status', { headers: { Authorization: 'Bearer wrong' } })).status, 401);
+    r = await request('/status', { headers });
+    assert.equal(r.headers.get('Cache-Control'), 'no-store');
+    assert.equal(r.headers.get('Access-Control-Allow-Origin'), '*');
+    assert.deepEqual(await r.json(), { last_sync: null, pending_notes: 0 });
+    assert.equal((await request('/status', post({}))).status, 405);
+    assert.equal((await request('/status/extra', { headers })).status, 404);
     r = await request('/sync', post({ files: { 'config.json': '{"name":"Test"}', 'brief.md': '# Test\nLikes tea' }, ack: [] }));
     assert.deepEqual((await r.json()).notes, []);
+    const initialStatus = await (await request('/status', { headers })).json();
+    assert.equal(initialStatus.pending_notes, 0);
+    assert.ok(Number.isFinite(Date.parse(initialStatus.last_sync)));
     r = await request('/mcp/' + token, { method: 'POST', body: JSON.stringify(rpc('initialize')) });
     assert.match((await r.json()).result.instructions, /Test/);
     r = await request('/mcp', post(rpc('tools/list')));
@@ -115,18 +128,25 @@ try {
     r = await request('/sync', post({ files: {}, ack: [] }));
     const pending = (await r.json()).notes;
     assert.equal(pending.length, 2);
+    assert.deepEqual(await (await request('/status', { headers })).json(),
+      { last_sync: initialStatus.last_sync, pending_notes: 2 });
     if (backend === 'cloudflare') failD1 = true; else failSupabase = true;
     r = await request('/sync', post({ files: { 'brief.md': 'failed' }, ack: [pending[0].id] }));
     assert.equal(r.status, 500);
     failD1 = failSupabase = false;
+    assert.deepEqual(await (await request('/status', { headers })).json(),
+      { last_sync: initialStatus.last_sync, pending_notes: 2 });
     r = await request('/sync', post({ files: {}, ack: [] }));
     assert.equal((await r.json()).notes.length, 2);
     r = await request('/sync', post({ files: {}, ack: [pending[0].id] }));
     assert.equal((await r.json()).notes.length, 1);
+    assert.deepEqual(await (await request('/status', { headers })).json(),
+      { last_sync: initialStatus.last_sync, pending_notes: 1 });
     if (backend === 'cloudflare') sql.prepare('update mh_config set value = ?').run('0'.repeat(64));
     else tables.mh_config[0].value = '0'.repeat(64);
     assert.equal((await request('/context', { headers })).status, 401);
-    console.log(`PASS ${backend}: auth/rotation, MCP, schema, search, dedupe, file validation, sync failure recovery`);
+    assert.equal((await request('/status', { headers })).status, 401);
+    console.log(`PASS ${backend}: auth/rotation, MCP, schema, search, dedupe, file validation, sync status and failure recovery`);
   }
 } finally {
   sql.close();

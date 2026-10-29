@@ -49,6 +49,7 @@ def setup(url: str, backend: str = "supabase") -> str:
     config.setdefault("name", "the user")
     save_state("config", config)
     digest = hashlib.sha256(cfg["token"].encode()).hexdigest()
+    connect = "metaharness://connect?" + urllib.parse.urlencode({"url": url, "token": cfg["token"]})
     provision = (f"On the server, run: ./mh serve --token-sha256 {digest}\n"
                  if backend == "self-hosted" else
                  "Run this SQL in your own hub database:\n\n"
@@ -61,7 +62,8 @@ def setup(url: str, backend: str = "supabase") -> str:
         f"Claude connector: {url}/mcp/{cfg['token']}\n"
         f"GPT schema: {url}/openapi.json\n"
         f"Bearer token: {cfg['token']}\n\n"
-        "Keep the token and connector URL private. Provision the server hash, then run ./mh tick."
+        f"Connect the app (private): {connect}\n\n"
+        "Keep the token, connector URL and app link private. Provision the server hash, then run ./mh tick."
     )
 
 

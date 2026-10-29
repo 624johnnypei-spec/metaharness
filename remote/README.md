@@ -86,6 +86,8 @@ For a local trial, use `http://127.0.0.1:8766` as the URL. Remote phone connecto
 
 `mh remote setup` generates a random token and saves it in owner-only `state/remote.json`. Backend, URL, and name live in `state/config.json`. Setup prints connector details and token-hash provisioning instructions; it does not log in or deploy for you. The public OpenAPI schema contains no personal data.
 
+Setup also prints a private `metaharness://connect?url=...&token=...` link for the [control app](../app/README.md). Opening it fills the connection screen; test the connection before saving. The link contains the token, so keep it out of shared logs and screenshots. Python's standard library has no QR encoder; setup prints the link without adding a dependency.
+
 Running setup again for the same backend and URL preserves the token. To rotate it, remove the token from `state/remote.json`, rerun setup, provision the new hash, and update your clients. Servers read the hash on every request, so the old token stops working immediately after the hash changes.
 
 ## Claude web and phone
@@ -127,6 +129,7 @@ New remote notes appear in hub context immediately. A sync writes them locally b
 | Route | Purpose |
 |---|---|
 | `GET /context` | Brief plus remote notes awaiting sync |
+| `GET /status` | `{last_sync, pending_notes}` from the stored brief and unacknowledged notes |
 | `GET /search?q=...` | Keyword search |
 | `POST /remember` | Save `{text, kind?, scope?, source?}` |
 | `POST /sync` | Exchange `{files, ack}` for `{notes}` |
@@ -134,6 +137,8 @@ New remote notes appear in hub context immediately. A sync writes them locally b
 | `GET /openapi.json` | Public GPT Action schema |
 
 Every route except the schema requires the shared token. The hub stores the four curated files, brief, live journal digest, configured name, and remotely submitted notes. Anyone with the token can read or change that memory. No data is uploaded until you configure a remote backend and sync.
+
+`last_sync` is the stored brief's upload timestamp, or `null` before the first upload. It is not an agent heartbeat. `pending_notes` counts remote notes awaiting acknowledgment by the curator. Reading status does not update either value. The app reads curated sections through the existing MCP `read_section` tool; there is no journal-list or agent-list route.
 
 `mh forget` retires a local journal note. After a tick, it disappears from the uploaded digest; an already pulled remote note remains in the server's `mh_notes` table until deleted there. Forgetting does not remove wording already distilled into a curated file: edit that file too. To remove cloud copies entirely, delete the corresponding rows or database.
 

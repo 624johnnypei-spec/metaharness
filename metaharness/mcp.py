@@ -163,6 +163,11 @@ def openapi(base: str) -> dict:
         "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer"}}},
         "paths": {
             "/context": {"get": {"operationId": "getContext", "summary": "Get the shared context before answering", "responses": markdown}},
+            "/status": {"get": {"operationId": "getStatus", "summary": "Read the last brief sync time and pending note count",
+                "responses": {"200": {"description": "Sync status", "content": {"application/json": {"schema": {
+                    "type": "object", "required": ["last_sync", "pending_notes"], "properties": {
+                        "last_sync": {"type": ["string", "null"], "format": "date-time"},
+                        "pending_notes": {"type": "integer", "minimum": 0}}}}}}}}},
             "/search": {"get": {"operationId": "searchMemory", "summary": "Search shared memories",
                 "parameters": [{"name": "q", "in": "query", "required": True, "schema": {"type": "string"}}], "responses": markdown}},
             "/remember": {"post": {"operationId": "remember", "summary": "Save a durable personal fact", "x-openai-isConsequential": True,
@@ -234,13 +239,15 @@ def serve_http(host: str, port: int, token_sha256: str | None = None) -> None:
                     else:
                         self._send(202)
                 return
-            methods = {"/context": "GET", "/search": "GET", "/remember": "POST", "/sync": "POST", "/openapi.json": "GET"}
+            methods = {"/context": "GET", "/status": "GET", "/search": "GET", "/remember": "POST", "/sync": "POST", "/openapi.json": "GET"}
             if path not in methods:
                 self._json({"error": "not found"}, 404)
             elif self.command != methods[path]:
                 self._send(405, allow=methods[path])
             elif path == "/context":
                 self._send(200, hub.context(), "text/markdown; charset=utf-8")
+            elif path == "/status":
+                self._json(hub.status())
             elif path == "/search":
                 query = parse_qs(url.query).get("q", [""])[0]
                 self._send(200, call_tool("search", {"query": query}, source, hub), "text/markdown; charset=utf-8")

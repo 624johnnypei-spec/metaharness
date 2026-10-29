@@ -26,6 +26,10 @@ export function d1Store(db: Database): Store {
       return (await db.prepare("select content from mh_files where name = ?1").bind(name)
         .first<{ content: string }>())?.content ?? "";
     },
+    async lastSync() {
+      return (await db.prepare("select updated_at from mh_files where name = 'brief.md'")
+        .first<{ updated_at: string }>())?.updated_at ?? null;
+    },
     async files(names) {
       if (!names.length) return [];
       const query = `select name, content from mh_files where name in (${names.map((_, i) => "?" + (i + 1)).join(",")})`;

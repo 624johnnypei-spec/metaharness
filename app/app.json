@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Metaharness",
+    "slug": "metaharness",
+    "version": "1.0.0",
+    "scheme": "metaharness",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "platforms": ["ios", "web"],
+    "ios": {
+      "bundleIdentifier": "com.johnnypei.metaharness",
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "config": { "usesNonExemptEncryption": false },
+      "infoPlist": { "ITSAppUsesNonExemptEncryption": false }
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      ["expo-secure-store", { "faceIDPermission": false }],
+      ["expo-splash-screen", {
+        "backgroundColor": "#F3F0E8",
+        "image": "./assets/splash.png",
+        "imageWidth": 180,
+        "dark": { "backgroundColor": "#0F0F0D", "image": "./assets/splash-dark.png" }
+      }]
+    ]
+  }
+}

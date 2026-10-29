@@ -10,6 +10,7 @@ import tempfile
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 
 REPO = Path(__file__).resolve().parent.parent
@@ -146,9 +147,23 @@ assert before == {name: core.read_curated(name) for name in core.CURATED}
         self.assertIn(digest, token_path.read_text())
         self.assertEqual(token_path.stat().st_mode & 0o777, 0o600)
         headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(url + "/status", timeout=5)
+        self.assertEqual(caught.exception.code, 401)
+        caught.exception.close()
+        with urllib.request.urlopen(urllib.request.Request(url + "/status", headers=headers), timeout=5) as response:
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            self.assertEqual(response.headers["Access-Control-Allow-Origin"], "*")
+            self.assertEqual(json.load(response), {"last_sync": None, "pending_notes": 0})
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(urllib.request.Request(url + "/status", data=b"{}", headers=headers), timeout=5)
+        self.assertEqual(caught.exception.code, 405)
+        caught.exception.close()
         request = urllib.request.Request(url + "/remember", data=b'{"text":"likes tea","kind":"preference"}', headers=headers)
         with urllib.request.urlopen(request, timeout=5) as response:
             self.assertIn("Saved", response.read().decode())
+        with urllib.request.urlopen(urllib.request.Request(url + "/status", headers=headers), timeout=5) as response:
+            self.assertEqual(json.load(response), {"last_sync": None, "pending_notes": 1})
         with urllib.request.urlopen(urllib.request.Request(url + "/context", headers=headers), timeout=5) as response:
             self.assertIn("likes tea", response.read().decode())
         with self.assertRaises(urllib.error.HTTPError) as caught:
@@ -172,8 +187,13 @@ assert before == {name: core.read_curated(name) for name in core.CURATED}
             return result.stdout
 
         run("init", "--name", "Test")
-        run("remote", "setup", "--backend", "self-hosted", "--url", url)
+        setup_output = run("remote", "setup", "--backend", "self-hosted", "--url", url)
         token = json.loads((client / "state/remote.json").read_text())["token"]
+        link = next(line.split(": ", 1)[1] for line in setup_output.splitlines() if line.startswith("Connect the app"))
+        parsed = urllib.parse.urlsplit(link)
+        self.assertEqual((parsed.scheme, parsed.netloc), ("metaharness", "connect"))
+        self.assertEqual(urllib.parse.parse_qs(parsed.query), {"url": [url], "token": [token]})
+        self.assertIn("url=http%3A%2F%2F", link)
         config = json.loads((client / "state/config.json").read_text())
         self.assertEqual(config, {"name": "Test", "backend": "self-hosted", "url": url})
         self.assertNotIn("url", json.loads((client / "state/remote.json").read_text()))
@@ -195,12 +215,20 @@ assert before == {name: core.read_curated(name) for name in core.CURATED}
             self.assertIn("likes tea", response.read().decode())
         with urllib.request.urlopen(url + "/openapi.json", timeout=5) as response:
             spec = json.load(response)
-        self.assertEqual(set(spec["paths"]), {"/context", "/search", "/remember"})
+        self.assertEqual(set(spec["paths"]), {"/context", "/search", "/remember", "/status"})
+        with urllib.request.urlopen(urllib.request.Request(url + "/status", headers=headers), timeout=5) as response:
+            status = json.load(response)
+        self.assertEqual(status["pending_notes"], 0)
+        self.assertIsInstance(status["last_sync"], str)
         request = urllib.request.Request(url + "/remember", data=b'{"text":"prefers green tea","kind":"preference","source":"phone"}', headers=headers)
         with urllib.request.urlopen(request, timeout=5) as response:
             self.assertIn("Saved", response.read().decode())
         run("tick")
         self.assertIn("prefers green tea", run("search", "green"))
+        with urllib.request.urlopen(urllib.request.Request(url + "/status", headers=headers), timeout=5) as response:
+            status = json.load(response)
+        self.assertEqual(status["pending_notes"], 0)
+        self.assertIsInstance(status["last_sync"], str)
         request = urllib.request.Request(url + "/mcp/" + token,
                                         data=b'{"jsonrpc":"2.0","id":1,"method":"tools/list"}',
                                         headers={"Content-Type": "application/json"})

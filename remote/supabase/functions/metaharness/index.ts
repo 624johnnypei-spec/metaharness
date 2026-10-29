@@ -14,6 +14,11 @@ export function supabaseStore(db: SupabaseClient): Store {
       check(error);
       return data?.content ?? "";
     },
+    async lastSync() {
+      const { data, error } = await db.from("mh_files").select("updated_at").eq("name", "brief.md").maybeSingle();
+      check(error);
+      return data?.updated_at ?? null;
+    },
     async files(names) {
       const { data, error } = await db.from("mh_files").select("name,content").in("name", names);
       check(error);

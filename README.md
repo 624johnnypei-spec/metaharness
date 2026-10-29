@@ -31,13 +31,21 @@ and pick up context from each other.
        + local MCP                Claude / ChatGPT / remote agents
 ```
 
+## App
+
+The [Metaharness app](app/README.md) connects to your own hub from iPhone, iPad,
+Apple-silicon Mac (the same iOS build), or any computer through a static website.
+Read the brief, browse and search memory, capture a note, and see actual sync status.
+It includes a clearly labelled fictional demo. Run `cd app && npm ci && npm start`;
+see the app README for static hosting and TestFlight release instructions.
+
 ## Quickstart · 5 minutes
 
 Requires **macOS or Linux, Python 3.10+, and the CLIs for the agents you use**.
 The local tools use only the Python standard library.
 
 ```sh
-git clone https://github.com/624johnnypei-spec/metaharness.git
+git clone https://github.com/YOUR_ACCOUNT/metaharness.git
 cd metaharness
 ```
 
