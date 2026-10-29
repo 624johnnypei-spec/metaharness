@@ -1,5 +1,6 @@
 import { Pressable, View } from "react-native";
-import Svg, { Path, Rect } from "react-native-svg";
+import Svg, { Circle, Path } from "react-native-svg";
+import { markColors, markGeometry } from "../../lib/mark";
 import { useTheme } from "../theme";
 
 export type IconName = "brief" | "memory" | "search" | "status" | "settings" | "plus" | "chevron" | "refresh" | "close" | "link";
@@ -30,9 +31,9 @@ export function IconButton({ name, label, onPress, disabled }: { name: IconName;
 }
 export function Mark({ small = false }: { small?: boolean }) {
   const t = useTheme();
-  return <View accessibilityLabel="Metaharness"><Svg width={small ? 24 : 44} height={small ? 24 : 44} viewBox="0 0 64 64" aria-hidden>
-    <Path d="M10 37 32 49 54 37v9L32 58 10 46z" fill={t.accent} />
-    <Path d="M10 24 32 36 54 24v9L32 45 10 33z" fill={t.accent} />
-    <Path d="M10 20 32 8 54 20 32 32z" fill={t.accent} />
+  const colors = markColors(t.dark);
+  return <View accessibilityLabel="Metaharness"><Svg testID="memory-mark" width={small ? 29 : 44} height={small ? 29 : 44} viewBox={`0 0 ${markGeometry.size} ${markGeometry.size}`} aria-hidden>
+    {markGeometry.agents.map((agent, index) => <Circle key={agent.source} cx={agent.x} cy={agent.y} r={agent.radius} fill={colors.agents[index]} />)}
+    <Circle cx={markGeometry.center.x} cy={markGeometry.center.y} r={markGeometry.center.radius} fill={colors.center} />
   </Svg></View>;
 }

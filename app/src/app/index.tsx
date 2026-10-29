@@ -27,7 +27,7 @@ export default function Brief() {
       {parsed.preamble ? <View style={{ marginBottom: 16 }}><Markdown text={parsed.preamble} /></View> : null}
       {value.status && value.status.pending_notes > 0 ? <Txt muted style={{ fontSize: 13, marginBottom: 16 }}>{value.status.pending_notes} {value.status.pending_notes === 1 ? "note" : "notes"} pending sync</Txt> : null}
       {parsed.sections.map((section, index) => <Collapsible key={`${index}-${section.title}`} title={sectionTitle(section.title)}
-        meta={!isJournal(section.title) ? <Txt muted style={{ fontSize: 12 }}>{synced ? `Synced ${relativeTime(synced).replace(/^(Just|Today|Yesterday|Tomorrow|In)/, word => word.toLowerCase())}` : "Update time not recorded"}</Txt> : undefined}>
+        meta={!isJournal(section.title) && synced ? <Txt muted style={{ fontSize: 12 }}>{`Synced ${relativeTime(synced).replace(/^(Just|Today|Yesterday|Tomorrow|In)/, word => word.toLowerCase())}`}</Txt> : undefined}>
         {isJournal(section.title) ? <JournalContent text={section.text} /> : <Markdown text={section.text} />}
       </Collapsible>)}
       {!value.context.trim() ? <Empty title="No shared context yet" action={<Action label="Remember" onPress={openCapture} />} /> : null}

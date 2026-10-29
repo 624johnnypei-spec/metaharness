@@ -1,27 +1,46 @@
-"""Render the layered-memory symbol. Pillow is only an authoring dependency."""
+"""Render the shared agent-and-memory mark. Requires Node and Pillow."""
+import json
+import subprocess
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-OUT = Path(__file__).resolve().parent.parent / "assets"
+APP = Path(__file__).resolve().parent.parent
+OUT = APP / "assets"
 OUT.mkdir(exist_ok=True)
-LAYERS = [
-    [(10, 37), (32, 49), (54, 37), (54, 46), (32, 58), (10, 46)],
-    [(10, 24), (32, 36), (54, 24), (54, 33), (32, 45), (10, 33)],
-    [(10, 20), (32, 8), (54, 20), (32, 32)],
-]
+# The SVG logo and raster exports use identical geometry and source colors.
+DATA = json.loads(subprocess.check_output([
+    "node", "--experimental-strip-types", "--input-type=module", "-e",
+    "import {pathToFileURL} from 'node:url'; "
+    "const {markGeometry,markColors}=await import(pathToFileURL(process.argv[1]).href); "
+    "process.stdout.write(JSON.stringify({geometry:markGeometry,light:markColors(false),dark:markColors(true)}));",
+    str(APP / "lib/mark.ts"),
+], text=True))
 
 
-def mark(size, background, foreground):
-    canvas = Image.new("RGB", (size * 3, size * 3), background)
+def mark(size, dark=False, inset=0.1):
+    canvas = Image.new("RGB", (size * 4, size * 4), "#000000" if dark else "#FFFFFF")
     draw = ImageDraw.Draw(canvas)
-    scale = size * 3 * 0.72 / 64
-    offset = size * 3 * 0.14
-    for points in LAYERS:
-        draw.polygon([(round(offset + x * scale), round(offset + y * scale)) for x, y in points], fill=foreground)
+    geometry = DATA["geometry"]
+    colors = DATA["dark" if dark else "light"]
+    scale = size * 4 * (1 - 2 * inset) / geometry["size"]
+    offset = size * 4 * inset
+    def dot(point, color):
+        x, y, radius = offset + point["x"] * scale, offset + point["y"] * scale, point["radius"] * scale
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color)
+    for point, color in zip(geometry["agents"], colors["agents"]):
+        dot(point, color)
+    dot(geometry["center"], colors["center"])
     return canvas.resize((size, size), Image.Resampling.LANCZOS)
 
 
-mark(1024, "#FFFFFF", "#0066CC").save(OUT / "icon.png")
-mark(256, "#FFFFFF", "#0066CC").save(OUT / "favicon.png")
-mark(1024, "#FFFFFF", "#0066CC").save(OUT / "splash.png")
-mark(1024, "#000000", "#64ABFF").save(OUT / "splash-dark.png")
+mark(1024).save(OUT / "icon.png")
+mark(256).save(OUT / "favicon.png")
+mark(1024).save(OUT / "splash.png")
+mark(1024, dark=True).save(OUT / "splash-dark.png")
+
+# Inspect the asset and the in-app mark at the actual small target size.
+proof = APP / "verification"
+proof.mkdir(exist_ok=True)
+mark(29).save(proof / "icon-29.png")
+mark(29, inset=0).save(proof / "mark-29-light.png")
+mark(29, dark=True, inset=0).save(proof / "mark-29-dark.png")

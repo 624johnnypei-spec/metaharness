@@ -1,6 +1,6 @@
 # Verification
 
-Redesign verified locally on 2026-10-29. No release, login, push, or cloud build was performed.
+Redesign and mark/timestamp follow-up verified locally on 2026-10-29. No release, login, push, or cloud build was performed.
 
 | Check | Result |
 | --- | --- |
@@ -13,16 +13,17 @@ Redesign verified locally on 2026-10-29. No release, login, push, or cloud build
 | Dependency compatibility | `expo install --check` passed; native animation peers match SDK 57 |
 | Native configuration | No permission usage descriptions, owner, or EAS project ID; tablet support and encryption declaration verified |
 | Native shortcuts | Local Expo module autolinking, Swift parsing, and podspec syntax passed; hardware delivery not runtime-tested |
-| Assets | Opaque RGB icon and both splash images are 1024 × 1024 |
+| Assets | Shared five-dot geometry and real provenance colors; opaque RGB icon and both splash images are 1024 × 1024, favicon is 256 × 256; inspected at 29px and 1024px |
 | Browser | All 8 combinations passed: demo/local hub × 390/1440px × light/dark |
 | Browser errors | Zero console errors and zero page errors across the matrix |
 | Provenance | Real source labels and relative dates displayed; agent foreground/background colors match between Memory and Search |
+| Missing timestamps | No placeholder update labels; demo Brief omits sync dates, local Brief shows real sync dates, and undated notes omit their date |
 | Desktop web shortcuts | Both Cmd+K and Ctrl+K open Remember in all four desktop cases |
 | Local round trip | Four app captures imported into a separate curator journal by `mh tick`; source/kind verified and pending count acknowledged to zero |
 | Privacy | Only the intended bundle identifier and 8 dependency metadata substring matches; no private data |
 | UI source leftovers | No removed display fonts, uppercase eyebrow styles, numbered navigation, slogan strings, or period-ended screen titles |
 
-The browser checks use fresh temporary HOME and MH_HOME directories, real HTTP requests to `mh serve`, and the exported static app. They seed fictional notes with actual source metadata, then cover onboarding, testing the connection, persistence, collapsible brief, refresh, curated sections, grouped search, provenance, capture, sync status, keyboard shortcuts, and disconnect. Screenshots were regenerated and visually inspected for both viewport sizes and color schemes; no horizontal page overflow was detected.
+The browser checks use fresh temporary HOME and MH_HOME directories, real HTTP requests to `mh serve`, and the exported static app. They seed fictional notes with actual source metadata, then cover onboarding, testing the connection, persistence, collapsible brief, refresh, curated sections, grouped search, provenance, capture, sync status, keyboard shortcuts, and disconnect. They also check the five-dot logo, its 29px sidebar size, and the absence of missing-date placeholders. Screenshots were regenerated and visually inspected for both viewport sizes and color schemes; no horizontal page overflow was detected.
 
 Requested screenshots in `verification/`:
 

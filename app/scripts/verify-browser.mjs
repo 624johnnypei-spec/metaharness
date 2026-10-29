@@ -85,12 +85,14 @@ try {
     const prefix = `${mode}-${width}-${colorScheme}`;
     const profileHeading = mode === 'demo' ? 'Profile' : 'About';
     async function screenshot(name) {
+      await expect(page.getByText(/Update time not recorded|Time not recorded/)).toHaveCount(0);
       await page.screenshot({ path: join(output, `${prefix}-${name}.png`), fullPage: true, animations: 'disabled' });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${prefix}/${name}: horizontal overflow`);
     }
     await page.goto(site);
     await expect(page.getByRole('heading', { name: 'Connect to your hub', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Try with sample data', exact: true })).toBeVisible();
+    await expect(page.getByTestId('memory-mark').locator('circle')).toHaveCount(5);
     await screenshot('onboarding');
     if (mode === 'demo') {
       await page.getByRole('button', { name: 'Try with sample data', exact: true }).click();
@@ -104,6 +106,12 @@ try {
     await expect(page.getByRole('heading', { name: 'Brief', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: profileHeading, exact: true })).toBeVisible();
     if (mode === 'demo') await expect(page.getByText('Demo', { exact: true }).first()).toBeVisible();
+    if (mode === 'demo') await expect(page.getByText(/^Synced /)).toHaveCount(0);
+    else await expect(page.getByText(/^Synced /).first()).toBeVisible();
+    if (width >= 900) {
+      await expect(page.getByTestId('memory-mark')).toHaveAttribute('width', '29');
+      await expect(page.getByTestId('memory-mark').locator('circle')).toHaveCount(5);
+    }
     await screenshot('brief');
     await page.getByRole('button', { name: profileHeading, exact: true }).click();
     await expect(page.getByRole('button', { name: profileHeading, exact: true })).toHaveAttribute('aria-expanded', 'false');

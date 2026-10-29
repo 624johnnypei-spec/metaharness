@@ -15,7 +15,7 @@ export function Provenance({ source, timestamp, dateOnly = false, file }: { sour
       <Txt style={{ color: colors.foreground, fontSize: 12, lineHeight: 18, fontWeight: "600" }}>{source}</Txt>
     </View> : <Txt muted style={{ fontSize: 12, lineHeight: 18 }}>Author not recorded</Txt>}
     {file ? <Txt mono muted>{file}</Txt> : null}
-    <Txt testID="provenance-time" muted style={{ fontSize: 12, lineHeight: 18 }} accessibilityLabel={timestamp ? `Recorded ${timestamp}` : undefined}>{relativeTime(timestamp, dateOnly, now)}</Txt>
+    {timestamp && Number.isFinite(Date.parse(timestamp)) ? <Txt testID="provenance-time" muted style={{ fontSize: 12, lineHeight: 18 }} accessibilityLabel={`Recorded ${timestamp}`}>{relativeTime(timestamp, dateOnly, now)}</Txt> : null}
   </View>;
 }
 export function JournalContent({ text }: { text: string }) {

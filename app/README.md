@@ -77,4 +77,4 @@ The browser check starts a static preview and an actual local `mh serve` with te
 
 `expo export -p ios` verifies the iOS JavaScript bundle and assets; it is not an Xcode compile, signed IPA, or device/TestFlight test. Native secure storage and OS deep-link delivery should also be exercised on a device before release.
 
-The icon is an opaque 1024px geometric mark. The splash uses the mark on a plain light or dark background. `python3 scripts/make-assets.py` regenerates the assets with Pillow (asset-authoring only, not an app dependency).
+The icon shows four agent dots in their provenance colors around one solid memory dot, on an opaque white 1024px canvas. The in-app logo and raster assets share geometry and colors from `lib/mark.ts`. The splash uses the same mark on a plain light or dark background. `python3 scripts/make-assets.py` regenerates the assets and 29px inspection images using Node and Pillow (Pillow is asset-authoring only, not an app dependency).
