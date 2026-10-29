@@ -20,6 +20,21 @@ test("URL validation preserves base paths and never falls back to a personal hub
   for (const token of ["", " demo", "demo ", "sample\ntoken"]) assert.throws(() => validateCredentials({ url: "https://example.invalid", token }));
 });
 
+test("cleartext connections are restricted to exact loopback hosts", () => {
+  for (const host of ["localhost", "127.0.0.1", "[::1]"]) {
+    assert.equal(validateCredentials({ url: `http://${host}:8766`, token: "sample-token" }).url, `http://${host}:8766`);
+  }
+  for (const host of ["hub.example", "localhost.example", "localhost.", "192.168.1.2", "0.0.0.0", "[::ffff:192.168.1.2]"]) {
+    assert.throws(() => validateCredentials({ url: `http://${host}`, token: "sample-token" }), /HTTPS/);
+  }
+});
+
+test("oversized connection input is rejected without echoing it", () => {
+  assert.throws(() => validateCredentials({ url: "https://example.invalid/" + "x".repeat(2048), token: "sample-token" }), /too long/);
+  assert.throws(() => validateCredentials({ url: "https://example.invalid", token: "x".repeat(513) }), /too long/);
+  assert.throws(() => parseConnectLink("metaharness://connect?" + "x".repeat(4096)), /Invalid connection link/);
+});
+
 test("invalid connection links fail without printing their original secret", () => {
   const token = "secret-for-test";
   const encoded = "url=https%3A%2F%2Fexample.invalid&token=" + token;

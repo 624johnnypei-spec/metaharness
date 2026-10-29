@@ -49,3 +49,10 @@ test("unrelated internal routes are preserved without pending credentials", () =
   assert.equal(redirect({ path: "/memory", initial: false }), "/memory");
   assert.equal(pending.takeConnection(), undefined);
 });
+
+test("unsupported incoming URLs cannot leak credentials into router state", () => {
+  for (const path of ["/connect?token=sample-secret&url=https://example.invalid", "https://example.invalid/connect?token=sample-secret", "/connect#token=sample-secret", "/connect?to%6ben=sample-secret", "https://example.invalid/private-path"]) {
+    assert.equal(redirect({ path, initial: false }), "/connect?invalid=1");
+    assert.equal(pending.takeConnection(), null);
+  }
+});

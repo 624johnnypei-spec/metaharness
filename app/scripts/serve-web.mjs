@@ -1,10 +1,16 @@
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
+import { CONTENT_SECURITY_POLICY } from '../lib/web-security.ts';
 
 const root = resolve('dist');
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png', '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.woff2': 'font/woff2', '.json': 'application/json' };
 createServer(async (req, res) => {
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY + "; frame-ancestors 'none'");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Referrer-Policy', 'no-referrer');
   try {
     const path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     let file = resolve(root, '.' + path);

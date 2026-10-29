@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HubClient, HubError, KINDS, parseSearchResults } from "../lib/api.ts";
+import { HubClient, HubError, KINDS, MAX_RESPONSE_BYTES, parseSearchResults } from "../lib/api.ts";
 import type { Credentials } from "../lib/types.ts";
 
 const credentials: Credentials = { url: "https://example.invalid/functions/v1/metaharness/", token: "sample-test-token" };
@@ -46,6 +46,7 @@ test("context preserves base paths and authenticates only in headers", async () 
     assert.equal(options.method, "GET");
     assert.deepEqual(options.headers, { Authorization: `Bearer ${credentials.token}`, Accept: "text/markdown", "X-Agent": "app" });
     assert.equal(options.credentials, "omit");
+    assert.equal(options.referrerPolicy, "no-referrer");
     assert.equal(options.cache, "no-store");
     assert.equal(options.redirect, "error");
     assert.ok(options.signal instanceof AbortSignal);
@@ -173,5 +174,20 @@ test("invalid inputs do not send requests", async () => {
   // Runtime validation still protects JS consumers and corrupt persisted values.
   await assert.rejects(client.remember("Text", "unknown" as never), /valid memory kind/);
   await assert.rejects(client.section("../secret" as never), /four curated/);
+  await assert.rejects(client.remember("a".repeat(16_001), "note"), /Keep notes/);
+  await assert.rejects(client.search("a".repeat(513)), /Keep search/);
   assert.deepEqual(KINDS, ["event", "feedback", "goal", "health", "life", "note", "person", "preference", "profile", "project", "reference", "school", "tip", "user"]);
+});
+
+test("oversized and misleading streamed hub responses stop before rendering", async () => {
+  const advertised = new Response("", { headers: { "Content-Type": "text/markdown", "Content-Length": String(MAX_RESPONSE_BYTES + 1) } });
+  await assert.rejects(new HubClient(credentials, fetchWith(() => advertised)).context(), /too large/);
+  let cancelled = false;
+  const stream = new ReadableStream({
+    pull(controller) { controller.enqueue(new Uint8Array(MAX_RESPONSE_BYTES + 1)); },
+    cancel() { cancelled = true; },
+  });
+  const streamed = new Response(stream, { headers: { "Content-Type": "text/markdown", "Content-Length": "1" } });
+  await assert.rejects(new HubClient(credentials, fetchWith(() => streamed)).context(), /too large/);
+  assert.ok(cancelled);
 });

@@ -37,7 +37,9 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
     }
   }
 
-  function inline(value: string, keyPrefix: string): React.ReactNode[] {
+  function inline(value: string, keyPrefix: string, depth = 0): React.ReactNode[] {
+    // Notes are untrusted input. Bound nesting and work per line before parsing.
+    if (depth >= 8 || value.length > 20_000) return [value];
     const expression =
       /(\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|\[([^\]]+)\]\(([^\s)]+)\)|\*([^*]+)\*|_([^_]+)_)/g;
     const nodes: React.ReactNode[] = [];
@@ -50,7 +52,7 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
       if (match[2] || match[3]) {
         nodes.push(
           <Text key={key} style={{ fontWeight: "600" }}>
-            {inline(match[2] || match[3], key)}
+            {inline(match[2] || match[3], key, depth + 1)}
           </Text>,
         );
       } else if (match[4]) {
@@ -60,7 +62,7 @@ export function Markdown({ text, compact = false }: MarkdownProps) {
           </Text>,
         );
       } else if (match[7] || match[8]) {
-        nodes.push(<Text key={key} style={{ fontStyle: "italic" }}>{inline(match[7] || match[8], key)}</Text>);
+        nodes.push(<Text key={key} style={{ fontStyle: "italic" }}>{inline(match[7] || match[8], key, depth + 1)}</Text>);
       } else {
         const url = match[6];
         nodes.push(

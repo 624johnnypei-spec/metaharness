@@ -16,6 +16,35 @@ export class HubError extends Error {
 
 const wrongResponse = () => new HubError("Not a Metaharness hub. Check the base URL.");
 const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+export const MAX_NOTE_LENGTH = 16_000;
+export const MAX_QUERY_LENGTH = 512;
+export const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+async function readBoundedResponse(response: Response): Promise<string> {
+  const tooLarge = () => new HubError("Hub response is too large. Reduce the shared context and retry.");
+  if (Number(response.headers.get("content-length")) > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel();
+    throw tooLarge();
+  }
+  if (!response.body) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) throw tooLarge();
+    return text;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return text + decoder.decode();
+      bytes += value.byteLength;
+      if (bytes > MAX_RESPONSE_BYTES) { await reader.cancel(); throw tooLarge(); }
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally { reader.releaseLock(); }
+}
 
 export function parseSearchResults(text: string): SearchGroup[] {
   if (text.trim() === "No matches.") return [];
@@ -61,6 +90,7 @@ export class HubClient {
           signal: controller.signal,
           cache: "no-store",
           credentials: "omit",
+          referrerPolicy: "no-referrer",
           redirect: "error",
         });
       } catch {
@@ -77,11 +107,11 @@ export class HubClient {
       const contentType = response.headers.get("content-type") ?? "";
       if (json ? !/^application\/json\b/i.test(contentType) : !/^text\/markdown\b/i.test(contentType)) throw wrongResponse();
       try {
-        if (json) return await response.json();
-        const text = await response.text();
+        const text = await readBoundedResponse(response);
+        if (json) return JSON.parse(text);
         if (/^\s*(?:<!doctype\s+html|<html[\s>])/i.test(text)) throw wrongResponse();
         return text;
-      } catch { throw wrongResponse(); }
+      } catch (error) { if (error instanceof HubError) throw error; throw wrongResponse(); }
     } finally { clearTimeout(timeout); }
   }
 
@@ -104,6 +134,7 @@ export class HubClient {
   }
 
   async search(query: string): Promise<SearchGroup[]> {
+    if (query.length > MAX_QUERY_LENGTH) throw new HubError(`Keep search terms under ${MAX_QUERY_LENGTH + 1} characters.`);
     if (this.demo) return demoSearch(query, [...this.demoSampleNotes, ...this.demoNotes]);
     return parseSearchResults(await this.request(`/search?q=${encodeURIComponent(query)}`, false) as string);
   }
@@ -119,6 +150,7 @@ export class HubClient {
   async remember(text: string, kind: RememberKind): Promise<RememberResponse> {
     const clean = text.trim();
     if (!clean) throw new HubError("Write something to remember.");
+    if (clean.length > MAX_NOTE_LENGTH) throw new HubError(`Keep notes under ${MAX_NOTE_LENGTH + 1} characters.`);
     if (!KINDS.includes(kind)) throw new HubError("Choose a valid memory kind.");
     if (this.demo) {
       const normalized = clean.toLowerCase().replace(/\s+/g, " ");

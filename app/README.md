@@ -19,6 +19,8 @@ Native tokens use SecureStore / iOS Keychain with device-only accessibility. Web
 
 `mh remote setup --backend self-hosted --url https://your-hub.example` also prints a private `metaharness://connect?url=...&token=...` link. Open it on an installed native app to fill connection settings; test and connect to save. The link is a credential: do not share or log it. Native routing removes its query before navigation. There is no QR dependency in the Python standard library, so setup prints the link only.
 
+Connection links never connect automatically. Custom URL schemes can be claimed by another installed app; manual token entry is safer on untrusted devices. Web does not accept credentials from URLs and removes query strings/fragments before the router starts. Do not put tokens in browser URLs: the initial request may already reach a static host's access logs. HTTPS is required except for exact loopback hosts (`localhost`, `127.0.0.1`, `::1`); the native ATS exceptions are restricted to those hosts too. Use `localhost` or `127.0.0.1` for browser loopback testing because browser CSP does not support IPv6 address literals.
+
 **Try with sample data** sets the token to exactly `demo`. Only that exact value enables the clearly labelled fictional Sam sample; empty or invalid credentials never fall back to sample data. Demo notes last for the current app session and never reach a hub.
 
 The interface uses system fonts, follows the system color scheme, and supports native text scaling. On a phone, use the header **+** button to remember a note. On desktop, use **Remember** in the toolbar or **Cmd/Ctrl+K**.
@@ -45,6 +47,10 @@ npm run preview
 ```
 
 Upload the contents of `dist/` to any static host. Serve `/memory`, `/settings`, and other extensionless routes from their matching `.html` files (or use an `index.html` fallback); retain `_expo/`, assets, and the exported files. No Node server, build secrets, or environment variables are needed in production. Use HTTPS, a trusted host, and an HTTPS hub with CORS support. `npm run preview` is a loopback-only convenience server, not a production deployment.
+
+Allow the web app's exact origin in the hub's `MH_ALLOWED_ORIGINS`. The exported HTML includes a restrictive script policy and no-referrer policy. Configure your static host with `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a `Content-Security-Policy` matching `lib/web-security.ts` plus `frame-ancestors 'none'` (the latter requires an HTTP header). The loopback preview sets these headers. Keep `public/security-bootstrap.js` in the export. Browser storage remains readable to code served by the same origin: use a dedicated trusted origin, and disconnect on shared computers.
+
+Direct dependency versions and the lockfile are pinned. Security overrides update the URL decoder and Expo tooling's Zod dependency without upgrading SDK 57; a small local CommonJS adapter lets `query-string` use the patched ESM decoder. Regression checks exercise router parsing and the actual Expo schemas. Run `npm audit --omit=dev` when updating dependencies. The remaining low-severity `deepmerge` advisory is in Expo's trusted local build configuration path, not the exported app; keep build configuration and plugins trusted until an upstream compatible fix is available.
 
 ## TestFlight release
 

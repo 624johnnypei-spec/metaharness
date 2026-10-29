@@ -2,6 +2,7 @@ import type { Credentials } from "./types.ts";
 
 export function validateCredentials(value: Credentials): Credentials {
   if (!value.token) throw new Error("Enter your hub token, or use demo for sample data.");
+  if (value.token.length > 512 || value.url.length > 2048) throw new Error("Connection details are too long. Check the hub URL and token.");
   if (/\s/.test(value.token)) throw new Error("Paste the token without spaces or line breaks.");
   if (value.token === "demo") return { url: "", token: "demo" };
   let parsed: URL;
@@ -11,6 +12,9 @@ export function validateCredentials(value: Credentials): Credentials {
       parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new Error("Use the hub base URL without credentials, a query, or a fragment.");
   }
+  if (parsed.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)) {
+    throw new Error("Use HTTPS for your hub. HTTP is allowed only on localhost.");
+  }
   return { url: parsed.href.replace(/\/+$/, ""), token: value.token };
 }
 
@@ -19,6 +23,7 @@ export function parseConnectLink(raw: string): Credentials {
   const invalid = () => new Error("Invalid connection link. Paste your hub URL and token in Settings.");
   let link: URL;
   try {
+    if (raw.length > 4096) throw invalid();
     if (/%(?![\da-f]{2})/i.test(raw)) throw invalid();
     link = new URL(raw);
   } catch { throw invalid(); }

@@ -69,7 +69,7 @@ try {
   assert.equal(new URL(link).searchParams.get('url'), hub);
   const digest = createHash('sha256').update(token).digest('hex');
   child('./mh', ['serve', '--port', String(hubPort), '--token-sha256', digest], { cwd: repo, env: serverEnv });
-  child(process.execPath, ['scripts/serve-web.mjs'], { cwd: app, env: { ...process.env, PORT: String(webPort) } });
+  child(process.execPath, ['--experimental-strip-types', 'scripts/serve-web.mjs'], { cwd: app, env: { ...process.env, PORT: String(webPort) } });
   await Promise.all([ready(hub), ready(site)]);
   cli(curatorEnv, ['tick']);
   const headers = { Authorization: `Bearer ${token}` };
@@ -182,7 +182,43 @@ try {
     console.log(`PASS ${prefix}: onboarding, brief, memory, search, provenance, capture, status, reload, disconnect${width >= 900 ? ', keyboard shortcuts' : ''}; zero console errors`);
     await context.close();
   }
-  await writeFile(join(output, 'browser-report.json'), JSON.stringify({ checks: reports, localCaptureTickRoundTrips: 4 }, null, 2) + '\n');
+  // Separate real-hub adversarial content check; keep normal screenshots clean.
+  const securityContext = await browser.newContext();
+  const securityPage = await securityContext.newPage();
+  const securityErrors = [];
+  currentErrors = securityErrors;
+  securityPage.on('pageerror', error => securityErrors.push(error.message));
+  securityPage.on('console', message => { if (message.type() === 'error') securityErrors.push(message.text()); });
+  let hubRequests = 0;
+  securityPage.on('request', request => { if (request.url().startsWith(hub)) hubRequests++; });
+  await securityPage.goto(site + '/connect?url=https%3A%2F%2Fexample.invalid&token=sample-unaccepted-credential');
+  await expect(securityPage.getByRole('heading', { name: 'Connect to your hub', exact: true })).toBeVisible();
+  assert.equal(new URL(securityPage.url()).search, '');
+  await expect(securityPage.getByLabel('Token', { exact: true })).toHaveValue('');
+  assert.equal(hubRequests, 0);
+  assert.equal(await securityPage.evaluate(() => localStorage.getItem('metaharness.connection.v1')), null);
+  await securityPage.getByRole('textbox', { name: 'Hub URL', exact: true }).fill('http://hub.example.invalid');
+  await securityPage.getByLabel('Token', { exact: true }).fill(token);
+  await securityPage.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expect(securityPage.getByText('Use HTTPS for your hub. HTTP is allowed only on localhost.', { exact: true })).toBeVisible();
+  assert.equal(hubRequests, 0);
+  await securityPage.getByRole('textbox', { name: 'Hub URL', exact: true }).fill(hub);
+  await securityPage.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expect(securityPage.getByRole('heading', { name: 'Brief', exact: true })).toBeVisible();
+  await writeFile(join(curator, 'self/profile.md'), '# Profile\n\n<img src="x" onerror="window.__mhInjected=true">\n\n<script>window.__mhInjected=true</script>\n\n[Blocked link](javascript:window.__mhInjected=true)\n');
+  cli(curatorEnv, ['tick']);
+  await securityPage.getByRole('button', { name: 'Refresh', exact: true }).click();
+  const unsafeLink = securityPage.getByRole('link', { name: 'Blocked link', exact: true });
+  await expect(unsafeLink).toBeVisible();
+  assert.equal(await securityPage.locator('img[src="x"]').count(), 0);
+  assert.equal(await securityPage.evaluate(() => window.__mhInjected), undefined);
+  await unsafeLink.click();
+  await expect(securityPage.getByText('This link is not a web address.', { exact: true })).toBeVisible();
+  assert.equal(await securityPage.evaluate(() => window.__mhInjected), undefined);
+  assert.deepEqual(securityErrors, []);
+  await securityContext.close();
+  console.log('PASS web security: URL credentials removed, explicit connection, HTTPS policy, inert raw HTML and blocked script links; zero console errors');
+  await writeFile(join(output, 'browser-report.json'), JSON.stringify({ checks: reports, localCaptureTickRoundTrips: 4, webSecurity: 'passed' }, null, 2) + '\n');
 } catch (error) {
   // Playwright's rich assertion object includes input values; never print it.
   const message = String(error.message) + '\n' + currentErrors.join('\n');
