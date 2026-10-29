@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.118.0";
 import { createHub, type MemoryFile, type Note, type Store } from "../../../shared/hub.ts";
+import { InputError, readPending } from "../../../shared/security.ts";
 
 export function supabaseStore(db: SupabaseClient): Store {
   const check = (error: { message: string } | null) => { if (error) throw new Error(error.message); };
@@ -25,18 +26,22 @@ export function supabaseStore(db: SupabaseClient): Store {
       return (data ?? []) as MemoryFile[];
     },
     async pending() {
-      const notes: Note[] = [];
-      for (let offset = 0; ; offset += 1000) {
+      return readPending(async offset => {
         const { data, error } = await db.from("mh_notes").select("*").eq("pulled", false)
-          .order("ts").order("id").range(offset, offset + 999);
+          .order("ts").order("id").range(offset, offset + 7);
         check(error);
-        notes.push(...(data ?? []) as Note[]);
-        if (!data || data.length < 1000) return notes;
-      }
+        return (data ?? []) as Note[];
+      });
+    },
+    async pendingCount() {
+      const { count, error } = await db.from("mh_notes").select("*", { count: "exact", head: true }).eq("pulled", false);
+      check(error);
+      return count ?? 0;
     },
     async insert(note) {
       const { error } = await db.from("mh_notes").insert(note);
       if (error?.code === "23505") return false;
+      if (error?.code === "P0001" && error.message === "pending note queue is full") throw new InputError("pending note queue is full; sync before saving more", 429);
       check(error);
       return true;
     },
@@ -60,4 +65,6 @@ const secrets = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}");
 const db = createClient(Deno.env.get("SUPABASE_URL")!,
   secrets.default ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   { auth: { persistSession: false, autoRefreshToken: false } });
-Deno.serve(createHub(supabaseStore(db), "/functions/v1/metaharness", "/metaharness"));
+const handler = createHub(supabaseStore(db), "/functions/v1/metaharness", "/metaharness",
+  { allowedOrigins: Deno.env.get("MH_ALLOWED_ORIGINS") });
+Deno.serve((req, info) => handler(req, info.remoteAddr.hostname));
